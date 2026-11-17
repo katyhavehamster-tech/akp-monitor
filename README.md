@@ -112,7 +112,7 @@ Word-версії оформлено за ДСТУ 4163:2020 (А4; поля 30/1
 | Розрахунок економії часу | `docs/word/02_Ekonomiia_chasu.docx` | [time-savings.md](docs/time-savings.md) |
 | Карта і бачення інтеграції з ІС МОУ та НАЗК | `docs/word/03_Karta_intehratsii.docx` | [integration.md](docs/integration.md) |
 | Аналіз можливих зловживань і запобіжників | `docs/word/04_Analiz_zlovzhyvan.docx` | [abuse-analysis.md](docs/abuse-analysis.md) |
-| Як ми використали ШІ (**чернетка — перепишіть своїми словами**) | `docs/word/05_Yak_my_vykorystaly_SHI.docx` | [ai-note.md](docs/ai-note.md) |
+| Як ми використали ШІ | `docs/word/05_Yak_my_vykorystaly_SHI.docx` | [ai-note.md](docs/ai-note.md) |
 | Сценарій демо-відео | `docs/word/06_Stsenarii_demo.docx` | [demo-script.md](docs/demo-script.md) |
 | Зразок аналітичної довідки (згенерований системою) | `docs/word/07_Analitychna_dovidka_zrazok.docx` | — |
 | Зразок друкованої форми звіту для НАЗК | `docs/word/08_Zvit_NAZK_I_pivrichchia_2026_zrazok.docx` | — |
