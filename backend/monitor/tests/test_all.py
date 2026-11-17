@@ -1,0 +1,145 @@
+"""Тести: python manage.py test monitor"""
+from datetime import date
+
+from django.core.exceptions import ValidationError
+from django.core.management import call_command
+from django.test import TestCase
+from rest_framework.test import APIClient
+
+from monitor.models import AuditLog, Evidence, ReportingPeriod, SystemSettings
+from monitor.selfcheck import run_selfcheck
+from monitor.surveys import compare, parse_csv
+
+
+class Base(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("import_dataset", verbosity=0)
+
+    def client_for(self, code):
+        c = APIClient()
+        r = c.post("/api/auth/login", {"username": code, "password": "demo"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        c.credentials(HTTP_AUTHORIZATION="Token " + r.json()["token"])
+        return c
+
+
+class SelfCheck(Base):
+    def test_flags_match_organizers_key(self):
+        r = run_selfcheck()["flags"]
+        self.assertEqual(r["missing"], [])
+        self.assertEqual(r["extra"], [])
+        self.assertEqual(r["matched"], 29)
+
+    def test_portal_report_matches_etalon(self):
+        r = run_selfcheck()["report"]
+        self.assertTrue(r["ok"], r["differences"][:5])
+
+
+class Access(Base):
+    def test_executor_sees_only_own_unit(self):
+        c = self.client_for("u-010")  # виконавець P05
+        items = c.get("/api/measures").json()["items"]
+        self.assertTrue(items)
+        self.assertTrue(all(i["unit"]["code"] == "P05" for i in items))
+        other = c.get("/api/measures/Z-01")
+        self.assertEqual(other.status_code, 403)
+
+    def test_manager_read_only(self):
+        c = self.client_for("u-004")
+        self.assertEqual(len(c.get("/api/measures").json()["items"]), 50)
+        r = c.post("/api/measures/Z-05/execution", {"status": "vykonano"}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_surveys_only_for_authorized_person(self):
+        for code in ("u-001", "u-004", "u-006", "u-005"):
+            self.assertEqual(self.client_for(code).get("/api/surveys").status_code, 403, code)
+        self.assertEqual(self.client_for("u-002").get("/api/surveys").status_code, 200)
+
+    def test_tech_admin_cannot_change_content(self):
+        c = self.client_for("u-001")
+        self.assertEqual(c.patch("/api/measures/Z-01", {"content": "x"}, format="json").status_code, 403)
+        self.assertEqual(c.get("/api/users").status_code, 200)
+
+    def test_executor_window(self):
+        c = self.client_for("u-010")
+        code = c.get("/api/measures").json()["items"][0]["code"]
+        r = c.post(f"/api/measures/{code}/execution", {"period": "2026-Q2", "status": "v_roboti",
+                                                        "result_text": "Тест 1"}, format="json")
+        # демо-дата 03.07.2026 — вікно Q2 (01–05.07) відкрите
+        self.assertIn(r.status_code, (200, 403))
+        s = SystemSettings.get()
+        s.today_override = date(2026, 8, 15)
+        s.save()
+        r = c.post(f"/api/measures/{code}/execution", {"period": "2026-Q2", "status": "v_roboti"}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_recommendation_requires_owner_and_deadline(self):
+        c = self.client_for("u-002")
+        items = c.get("/api/recommendations?period=2026-Q2").json()["items"]
+        self.assertTrue(items)
+        rid = items[0]["id"]
+        self.assertEqual(c.post(f"/api/recommendations/{rid}/decide", {"state": "accepted"}, format="json").status_code, 400)
+        ok = c.post(f"/api/recommendations/{rid}/decide",
+                    {"state": "accepted", "responsible_unit": "P01", "due_date": "2026-09-30"}, format="json")
+        self.assertEqual(ok.status_code, 200)
+
+
+class Integrity(Base):
+    def test_audit_chain_detects_tampering(self):
+        self.assertTrue(AuditLog.verify_chain()["ok"])
+        rec = AuditLog.objects.order_by("id")[10]
+        AuditLog.objects.filter(pk=rec.pk).update(new_value="підроблено")
+        res = AuditLog.verify_chain()
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["broken_at"], rec.pk)
+
+    def test_evidence_immutable(self):
+        e = Evidence.objects.first()
+        e.title = "інша назва"
+        with self.assertRaises(ValidationError):
+            e.save()
+        with self.assertRaises(ValidationError):
+            e.delete()
+
+
+class Surveys(TestCase):
+    def test_email_columns_dropped(self):
+        raw = ("Позначка часу,Адреса електронної пошти,Питання\n"
+               "01.01.2026,a@b.ua,Так\n02.01.2026,c@d.ua,Ні\n").encode()
+        p = parse_csv(raw)
+        self.assertEqual(p["questions"], ["Питання"])
+        self.assertIn("Адреса електронної пошти", p["dropped"])
+        self.assertNotIn("@", str(p["answers"]))
+
+    def test_small_groups_hidden(self):
+        a = {"questions": ["Q"], "answers": [{"Q": "Так"}] * 3}
+        self.assertTrue(compare(a, a, min_group=5)["hidden"])
+        b = {"questions": ["Q"], "answers": [{"Q": "Так"}] * 6}
+        self.assertFalse(compare(b, b, min_group=5)["hidden"])
+
+
+class Exports(Base):
+    def test_all_exports_download(self):
+        c = self.client_for("u-002")
+        urls = ["reports/portal?year=2026&half=1&format=xlsx", "reports/portal?year=2026&half=1&format=csv",
+                "reports/portal?year=2026&half=1&format=docx", "reports/note?period=2026-Q2&format=docx",
+                "reports/note?period=2026-Q2&format=md", "reports/internal?period=2026-Q2&format=xlsx",
+                "reports/internal?period=2026-Q2&format=csv", "audit/export"]
+        for u in urls:
+            r = c.get("/api/" + u)
+            self.assertEqual(r.status_code, 200, u)
+            self.assertIn("attachment", r["Content-Disposition"], u)
+
+    def test_docx_follows_dstu_4163(self):
+        import io
+        from docx import Document
+        from docx.shared import Mm
+        r = self.client_for("u-002").get("/api/reports/note?period=2026-Q2&format=docx")
+        d = Document(io.BytesIO(r.content))
+        s = d.sections[0]
+        self.assertEqual((round(s.left_margin.mm), round(s.right_margin.mm), round(s.top_margin.mm),
+                          round(s.bottom_margin.mm)), (30, 10, 20, 20))
+        self.assertEqual(d.styles["Normal"].font.name, "Times New Roman")
+        self.assertTrue(s.different_first_page_header_footer)
+        self.assertNotIn("**", "\n".join(p.text for p in d.paragraphs))

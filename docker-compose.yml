@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: akp
+      POSTGRES_USER: akp
+      POSTGRES_PASSWORD: akp
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U akp"]
+      interval: 3s
+      retries: 20
+  app:
+    build: .
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      POSTGRES_DB: akp
+      POSTGRES_USER: akp
+      POSTGRES_PASSWORD: akp
+      POSTGRES_HOST: db
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: change-me-in-production
+      DJANGO_ALLOWED_HOSTS: "*"
+      DJANGO_CSRF_ORIGINS: "http://localhost:8000"
+    ports: ["8000:8000"]
+    volumes: [media:/app/backend/media]
+volumes:
+  pgdata:
+  media:
