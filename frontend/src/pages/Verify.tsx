@@ -116,7 +116,7 @@ export default function Verify() {
   return (
     <div className="verify-page">
       {/* Повноширинна офіційна шапка (Header) */}
-      <header className="verify-header">
+      <header className="verify-header no-print">
         <div className="verify-header-inner">
           <div className="verify-header-brand">
             <Emblem size={38} />
@@ -150,8 +150,18 @@ export default function Verify() {
       {/* Основний вміст сторінки */}
       <main className="verify-main">
         <div className="verify-container">
-          {/* Верхній блок заголовка */}
-          <div className="verify-hero">
+          {/* Офіційний заголовок для друку */}
+          <div className="print-only" style={{ textAlign: 'center', marginBottom: '14pt' }}>
+            <div style={{ fontSize: '13pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
+              Харківський національний університет внутрішніх справ
+            </div>
+            <div style={{ fontSize: '10pt', color: '#333', marginTop: '2pt' }}>
+              АКП-Монітор · Підсистема електронної криптографічної верифікації звітів НАЗК (ДСТУ 4163:2020)
+            </div>
+          </div>
+
+          {/* Верхній блок заголовка для екрана */}
+          <div className="verify-hero no-print">
             <div>
               <h1 className="verify-title">Перевірка автентичності та цілісності звіту</h1>
               <p className="verify-desc">

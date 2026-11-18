@@ -1173,7 +1173,22 @@ textarea { min-height: 110px; resize: vertical; }
 .print-only { display: none; }
 @page { size: A4 landscape; margin: 15mm 10mm 15mm 20mm; }
 @media print {
-  .no-print, .sidebar, .header, .scrim, footer, .tabs, .btn, input[type="checkbox"] { display: none !important; }
+  .no-print,
+  .sidebar,
+  .header,
+  .verify-header,
+  .verify-hero,
+  .verify-search-card,
+  .verify-doc-actions,
+  .verify-doc-filter-bar,
+  .verify-footer,
+  .scrim,
+  footer,
+  .tabs,
+  .btn,
+  input[type="checkbox"] {
+    display: none !important;
+  }
   .app { display: block !important; }
   .print-only { display: block !important; }
   body, :root, :root.dark, :root.light {
@@ -1235,6 +1250,131 @@ textarea { min-height: 110px; resize: vertical; }
     border: 1pt solid #ccc !important;
     color: #000 !important;
     background: #f5f5f5 !important;
+  }
+
+  /* Специфічні оптимізації для публічної сторінки верифікації (/verify) */
+  .verify-page,
+  .verify-main,
+  .verify-container {
+    min-height: auto !important;
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    display: block !important;
+    position: static !important;
+  }
+  .verify-badge-card {
+    margin-top: 0 !important;
+    margin-bottom: 10pt !important;
+    padding: 6pt 10pt !important;
+    border: 1pt solid #000 !important;
+    background: #f8fafc !important;
+    color: #000 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .verify-badge-card.success {
+    border-color: #16a34a !important;
+    background: #f0fdf4 !important;
+  }
+  .verify-badge-card .verify-pill {
+    color: #000 !important;
+    background: #e2e8f0 !important;
+    border: 1pt solid #cbd5e1 !important;
+  }
+  .verify-badge-card h2 {
+    font-size: 13pt !important;
+    color: #000 !important;
+  }
+  .verify-badge-card p {
+    font-size: 10pt !important;
+    color: #222 !important;
+  }
+  .verify-details-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6pt !important;
+    font-size: 9.5pt !important;
+  }
+  .verify-doc-card {
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    margin-top: 10pt !important;
+  }
+  .verify-doc-header {
+    border-bottom: 1.5pt solid #000 !important;
+    padding-bottom: 4pt !important;
+    margin-bottom: 6pt !important;
+  }
+  .verify-doc-title {
+    font-size: 12pt !important;
+    font-weight: bold !important;
+    color: #000 !important;
+  }
+  .verify-doc-sub {
+    font-size: 9.5pt !important;
+    color: #333 !important;
+  }
+  .verify-table {
+    min-width: 100% !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-family: "Times New Roman", Times, serif !important;
+    font-size: 9pt !important;
+  }
+  .verify-table th {
+    position: static !important;
+    background: #f0f4f8 !important;
+    color: #000 !important;
+    font-weight: bold !important;
+    border: 1pt solid #000 !important;
+    padding: 3pt 4pt !important;
+    text-align: center !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .verify-table td {
+    border: 1pt solid #000 !important;
+    padding: 3pt 4pt !important;
+    color: #000 !important;
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
+  }
+  .verify-table tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background: transparent !important;
+  }
+  .verify-doc-seal {
+    margin-top: 14pt !important;
+    padding-top: 10pt !important;
+    border-top: 1pt dashed #000 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .verify-seal-grid {
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 20pt !important;
+  }
+  .seal-signatory {
+    flex: 1 1 0 !important;
+  }
+  .seal-line {
+    border-bottom: 1pt solid #000 !important;
+  }
+  .seal-stamp {
+    border: 1pt solid #16a34a !important;
+    background: #f0fdf4 !important;
+    color: #14532d !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 
