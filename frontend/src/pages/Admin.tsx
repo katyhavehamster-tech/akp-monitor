@@ -80,7 +80,7 @@ export function AdminUsers() {
         <label className="f">Посада<input value={f.position || ''} onChange={e => setF({ ...f, position: e.target.value })} placeholder="Головний спеціаліст" /></label>
         <div className="admin-create-pw span2-lg">
           <label className="f" style={{ flex: 1, marginBottom: 0 }}>Пароль
-            <input type="password" value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} placeholder="demo" />
+            <input type="password" value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} placeholder="Введіть пароль" />
           </label>
           <button type="button" className="btn" onClick={create}>Створити</button>
         </div>
