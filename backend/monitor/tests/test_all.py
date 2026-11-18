@@ -143,3 +143,87 @@ class Exports(Base):
         self.assertEqual(d.styles["Normal"].font.name, "Times New Roman")
         self.assertTrue(s.different_first_page_header_footer)
         self.assertNotIn("**", "\n".join(p.text for p in d.paragraphs))
+
+
+class Security(Base):
+    def test_user_deletion_preserves_audit_chain_and_comments(self):
+        admin_c = self.client_for("u-001")
+        r = admin_c.post("/api/users", {
+            "code": "U-099", "role": "VYK", "unit": "P05", "password": "demo"
+        }, format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertNotIn("full_name", r.json())
+        vyk_c = self.client_for("u-099")
+        m_code = vyk_c.get("/api/measures").json()["items"][0]["code"]
+        self.assertEqual(vyk_c.post(f"/api/measures/{m_code}/comments", {"text": "Коментар виконавця"}, format="json").status_code, 201)
+        self.assertEqual(admin_c.delete("/api/users/U-099").status_code, 204)
+        self.assertTrue(AuditLog.verify_chain()["ok"])
+        comments = admin_c.get(f"/api/measures/{m_code}").json()["comments"]
+        self.assertTrue(any(c["author"] == "U-099" for c in comments))
+
+    def test_evidence_blocks_dangerous_files_and_javascript_links_and_enforces_auth(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        koord = self.client_for("u-002")
+        bad_file = SimpleUploadedFile("xss.html", b"<script>alert(1)</script>", content_type="text/html")
+        r_bad = koord.post("/api/measures/Z-01/evidence", {
+            "title": "XSS", "doc_date": "2026-06-01", "file": bad_file
+        }, format="multipart")
+        self.assertEqual(r_bad.status_code, 400)
+
+        r_js = koord.post("/api/measures/Z-01/evidence", {
+            "title": "JS Link", "doc_date": "2026-06-01", "link": "javascript:alert(1)"
+        }, format="json")
+        self.assertEqual(r_js.status_code, 400)
+
+        good_file = SimpleUploadedFile("nakaz_45.pdf", b"%PDF-1.4 fake test pdf", content_type="application/pdf")
+        r_ok = koord.post("/api/measures/Z-01/evidence", {
+            "title": "Наказ № 45", "doc_date": "2026-06-01", "file": good_file, "link": "https://nazk.gov.ua/"
+        }, format="multipart")
+        self.assertEqual(r_ok.status_code, 201, r_ok.content)
+        file_url = r_ok.json()["file"]
+
+        # Без авторизації та з чужого підрозділу файл недоступний
+        anon = APIClient()
+        self.assertIn(anon.get(file_url).status_code, (401, 403))
+        self.assertEqual(anon.get("/media/evidence/Z-01/nakaz_45.pdf").status_code, 403)
+        other_vyk = self.client_for("u-010")
+        self.assertEqual(other_vyk.get(file_url).status_code, 403)
+
+        # Авторизоване завантаження повертає захисні заголовки
+        dl = koord.get(file_url)
+        self.assertEqual(dl.status_code, 200)
+        self.assertEqual(dl["X-Content-Type-Options"], "nosniff")
+        self.assertIn("attachment", dl["Content-Disposition"])
+
+    def test_logout_revokes_token_and_login_rate_limit(self):
+        from django.core.cache import cache
+        cache.clear()
+        c = self.client_for("u-005")
+        self.assertEqual(c.get("/api/auth/me").status_code, 200)
+        self.assertEqual(c.post("/api/auth/logout").status_code, 204)
+        self.assertEqual(c.get("/api/auth/me").status_code, 401)
+
+        anon = APIClient()
+        for _ in range(10):
+            r = anon.post("/api/auth/login", {"username": "u-002", "password": "wrong"}, format="json")
+            self.assertEqual(r.status_code, 400)
+        r_blocked = anon.post("/api/auth/login", {"username": "u-002", "password": "wrong"}, format="json")
+        self.assertEqual(r_blocked.status_code, 429)
+        cache.clear()
+
+    def test_admin_self_lockout_and_security_headers_and_csv_injection(self):
+        admin_c = self.client_for("u-001")
+        self.assertEqual(admin_c.patch("/api/users/U-001", {"is_active": False}, format="json").status_code, 400)
+        self.assertEqual(admin_c.patch("/api/users/U-001", {"role": "KER"}, format="json").status_code, 400)
+        self.assertEqual(admin_c.patch("/api/settings", {"min_survey_group": 0}, format="json").status_code, 400)
+
+        me_resp = admin_c.get("/api/auth/me")
+        self.assertIn("Content-Security-Policy", me_resp)
+        self.assertIn("Permissions-Policy", me_resp)
+        self.assertIn("no-store", me_resp["Cache-Control"])
+
+        # Перевірка нейтралізації формул у CSV-експорті
+        koord = self.client_for("u-002")
+        koord.post("/api/measures/Z-01/comments", {"text": "=CMD|' /C calc'!A0"}, format="json")
+        csv_text = koord.get("/api/audit/export").content.decode("utf-8-sig")
+        self.assertIn("'=CMD|", csv_text)

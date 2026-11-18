@@ -97,7 +97,6 @@ def _page_numbers(sec):
 
 def _runs(p, text: str, size=None, bold=None, italic=None):
     """Додає текст із підтримкою **жирного** та `коду` (без символів розмітки у результаті)."""
-    text = text.replace("—", "-").replace("–", "-")  # у документах використовуємо дефіс
     parts = re.split(r"(\*\*[^*]+\*\*|`[^`]+`)", text)
     for part in parts:
         if not part:
@@ -145,7 +144,7 @@ def bullet(doc, text, numbered=False, n=None):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.first_line_indent = INDENT
-    _runs(p, (f"{n}) " if numbered else "- ") + text)
+    _runs(p, (f"{n}) " if numbered else "– ") + text)
     return p
 
 
@@ -232,7 +231,7 @@ def text_width(doc) -> int:
     return s.page_width - s.left_margin - s.right_margin
 
 
-def signature(doc, position_lines: list[str], name: str = "Власне імʼя ПРІЗВИЩЕ"):
+def signature(doc, position_lines: list[str], name: str = "Олександр КОВАЛЕНКО"):
     """Реквізит «Підпис»: посада ліворуч, імʼя праворуч на рівні останнього рядка посади."""
     doc.add_paragraph()
     doc.add_paragraph()

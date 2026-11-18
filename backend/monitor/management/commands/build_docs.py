@@ -15,7 +15,7 @@ ORDER = [
     ("time-savings.md", "02_Ekonomiia_chasu.docx"),
     ("integration.md", "03_Karta_intehratsii.docx"),
     ("abuse-analysis.md", "04_Analiz_zlovzhyvan.docx"),
-    ("ai-note.md", "05_Yak_my_vykorystaly_SHI.docx"),
+    ("ai.md", "05_Yak_my_vykorystaly_SHI.docx"),
     ("demo-script.md", "06_Stsenarii_demo.docx"),
 ]
 

@@ -85,7 +85,8 @@ def note_docx(period: ReportingPeriod) -> bytes:
     for i, r in enumerate(recs, 1):
         D.bullet(doc, r["proposed_action"].rstrip(".") + (";" if i < len(recs) else "."), numbered=True, n=i)
 
-    D.signature(doc, ["Головний спеціаліст сектору з питань", "запобігання та виявлення корупції"])
+    sig1, _ = SystemSettings.signatories()
+    D.signature(doc, ["Головний спеціаліст сектору з питань", "запобігання та виявлення корупції"], name=sig1)
     return D.to_bytes(doc)
 
 
@@ -109,6 +110,7 @@ def portal_docx(year: int, half: int) -> bytes:
                 [[r["nomer"], r["opys_zakhodu"], r["naimenuvannia_pidrozdilu"], r["zaplanovanyi_strok"],
                   D.ddmmyyyy(r["faktychnyi_strok_vykonannia"]), r["stan_vykonannia"], r["opys_rezultatu_abo_prychyn"]]
                  for r in rows if r["rozdil_portal"] == sec.portal_name], widths_mm=widths, size=10)
-    D.signature(doc, ["Уповноважена особа з питань запобігання", "та виявлення корупції"])
-    D.signature(doc, ["Керівник органу"])
+    sig1, sig2 = SystemSettings.signatories()
+    D.signature(doc, ["Уповноважена особа з питань запобігання", "та виявлення корупції"], name=sig1)
+    D.signature(doc, ["Керівник органу"], name=sig2)
     return D.to_bytes(doc)

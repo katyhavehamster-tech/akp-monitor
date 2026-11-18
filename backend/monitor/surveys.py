@@ -17,8 +17,16 @@ DROP_HEADERS = ("позначка часу", "timestamp", "електронн", 
 MULTI_SEP = ";"
 
 
+MAX_SURVEY_BYTES = 5 * 1024 * 1024
+
+
 def parse_csv(raw: bytes) -> dict:
-    text = raw.decode("utf-8-sig")
+    if len(raw) > MAX_SURVEY_BYTES:
+        raise ValueError("Файл перевищує допустимий розмір (5 МБ)")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1251")
     reader = csv.reader(io.StringIO(text))
     table = [r for r in reader if any(c.strip() for c in r)]
     if not table:
