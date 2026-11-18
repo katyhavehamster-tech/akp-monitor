@@ -185,7 +185,7 @@ export default function Verify() {
           {/* Форма пошуку (ручна перевірка або інший звіт) */}
           {showSearchForm && (
             <div className="card verify-search-card no-print" style={{ marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.4rem', marginBottom: '.75rem' }}>
                 <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Параметри верифікації документа</h3>
                 <span className="muted" style={{ fontSize: '.82rem' }}>Введіть ID або відскануйте QR-код</span>
               </div>
@@ -378,8 +378,8 @@ export default function Verify() {
                     </div>
 
                     {/* Панель фільтрації по заходах */}
-                    <div className="filter-bar verify-doc-filter-bar no-print" style={{ margin: '1rem 0' }}>
-                      <div className="search-box" style={{ flex: '1 1 240px' }}>
+                    <div className="filter-bar verify-doc-filter-bar no-print">
+                      <div className="search-box verify-filter-search">
                         <Search size={16} />
                         <input
                           type="text"
@@ -390,7 +390,7 @@ export default function Verify() {
                       </div>
 
                       {sections.length > 0 && (
-                        <div className="select-wrap" style={{ flex: '1 1 200px' }}>
+                        <div className="select-wrap verify-filter-select">
                           <Filter size={15} />
                           <select
                             value={filterSection}
@@ -405,7 +405,7 @@ export default function Verify() {
                         </div>
                       )}
 
-                      <div className="select-wrap" style={{ flex: '0 1 180px' }}>
+                      <div className="select-wrap verify-filter-select">
                         <select
                           value={filterStatus}
                           onChange={e => setFilterStatus(e.target.value)}
@@ -421,8 +421,13 @@ export default function Verify() {
                     </div>
 
                     {/* Індикатор кількості */}
-                    <div className="muted" style={{ fontSize: '.84rem', marginBottom: '.65rem' }}>
+                    <div className="muted" style={{ fontSize: '.84rem', margin: '.65rem 0 .5rem' }}>
                       Відображено <b>{filteredRows.length}</b> із <b>{rows.length}</b> заходів у зафіксованому звіті
+                    </div>
+
+                    {/* Підказка гортання таблиці для мобільних */}
+                    <div className="verify-table-hint no-print">
+                      <span>↔ Гортайте таблицю вправо/вліво для перегляду всіх колонок</span>
                     </div>
 
                     {/* Таблиця заходів */}
@@ -569,7 +574,7 @@ export default function Verify() {
                         <div className="crypto-label">
                           <span>Унікальний ідентифікатор зліпка (UUIDv4):</span>
                         </div>
-                        <code className="crypto-value">{res.snapshot.id}</code>
+                        <code className="crypto-value break-all">{res.snapshot.id}</code>
                       </div>
                     </div>
                   </div>
