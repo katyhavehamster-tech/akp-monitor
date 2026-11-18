@@ -995,6 +995,13 @@ def verify_report(request):
     current_hash = V.compute_report_hash(current_rows)
     is_intact = (current_hash == snapshot.report_hash)
 
+    # Якщо запитується експорт у Word для верифікованого звіту
+    if request.query_params.get("format") == "docx":
+        from .reports_docx import portal_docx
+        base_url = request.build_absolute_uri("/").rstrip("/")
+        fname = f"zvit_portal_{snapshot.year}_h{snapshot.half}_verified.docx"
+        return _docx_response(fname, portal_docx(snapshot.year, snapshot.half, base_url=base_url))
+
     status_code = "verified_intact" if is_intact else "verified_modified"
     message = (
         "Звіт офіційно верифіковано: криптографічний підпис дійсний, дані повністю відповідають актуальному стану реєстру."
@@ -1002,12 +1009,25 @@ def verify_report(request):
         "Криптографічний підпис дійсний (звіт був офіційно зафіксований), проте після його створення дані в реєстрі змінювалися."
     )
 
+    rows_data = snapshot.raw_data or current_rows
+    sections_list = []
+    seen_sec = set()
+    for r in rows_data:
+        sec_name = r.get("rozdil_portal", "")
+        if sec_name and sec_name not in seen_sec:
+            seen_sec.add(sec_name)
+            sections_list.append(sec_name)
+
     return Response({
         "ok": True,
         "status": status_code,
         "valid_signature": True,
         "data_matches_current": is_intact,
         "message": message,
+        "program_name": pr.name if pr else "Антикорупційна програма",
+        "sections": sections_list,
+        "columns": R.REPORT_COLUMNS,
+        "docx_download_url": f"/api/reports/verify?id={snapshot.id}&sig={snapshot.signature}&format=docx",
         "snapshot": {
             "id": str(snapshot.id),
             "period_code": snapshot.period.code,
@@ -1022,6 +1042,7 @@ def verify_report(request):
             "total_measures": snapshot.total_measures,
             "rows_count": snapshot.rows_count,
             "summary": snapshot.summary,
+            "raw_data": rows_data,
         },
         "current_hash": current_hash,
     })
