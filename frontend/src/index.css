@@ -1462,6 +1462,10 @@ textarea { min-height: 110px; resize: vertical; }
   align-items: center;
   gap: .75rem;
   min-width: 0;
+  flex-shrink: 1;
+}
+.verify-header-brand .logo {
+  flex-shrink: 0;
 }
 .verify-header-brand .brand-text {
   display: flex;
@@ -1476,6 +1480,7 @@ textarea { min-height: 110px; resize: vertical; }
   align-items: center;
   gap: .42rem;
   line-height: 1.25;
+  white-space: nowrap;
 }
 .verify-header-brand .brand-badge {
   font-size: .72rem;
@@ -1486,17 +1491,24 @@ textarea { min-height: 110px; resize: vertical; }
   border: 1px solid var(--accent);
   padding: .06rem .38rem;
   border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 .verify-header-brand .brand-subtitle {
   font-size: .8rem;
   color: var(--muted);
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .verify-header-tools {
   display: flex;
   align-items: center;
   gap: .65rem;
   flex-shrink: 0;
+}
+.verify-login-text-short {
+  display: none;
 }
 
 /* Основний контейнер сторінки верифікації */
@@ -1665,9 +1677,122 @@ textarea { min-height: 110px; resize: vertical; }
 .verify-footer { margin-top: 2.5rem; text-align: center; color: var(--muted); font-size: .82rem; }
 .break-all { word-break: break-all; }
 
+/* Адаптивність сторінки верифікації для планшетів та мобільних */
+@media (max-width: 860px) {
+  .verify-header {
+    height: 56px;
+    min-height: 56px;
+  }
+  .verify-header-inner {
+    padding: 0 1rem;
+    gap: .75rem;
+  }
+  .verify-header-brand {
+    gap: .6rem;
+  }
+  .verify-header-brand .logo {
+    width: 34px !important;
+    height: 34px !important;
+  }
+  .verify-header-brand .brand-title {
+    font-size: .98rem;
+  }
+  .verify-header-brand .brand-subtitle {
+    display: none !important;
+  }
+  .verify-header-tools .verify-header-pill {
+    display: none !important;
+  }
+  .verify-header-tools {
+    gap: .5rem;
+  }
+}
+
 @media (max-width: 640px) {
-  .verify-header-inner { padding: 0 .75rem; }
+  .verify-header {
+    height: 54px;
+    min-height: 54px;
+  }
+  .verify-header-inner {
+    padding: 0 .75rem;
+    gap: .5rem;
+  }
+  .verify-header-brand {
+    gap: .5rem;
+  }
+  .verify-header-brand .logo {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  .verify-header-brand .brand-title {
+    font-size: .92rem;
+    gap: .35rem;
+  }
+  .verify-header-brand .brand-badge {
+    font-size: .68rem;
+    padding: .04rem .3rem;
+  }
+  .verify-login-text-full {
+    display: none;
+  }
+  .verify-login-text-short {
+    display: inline;
+  }
+  .verify-header-tools {
+    gap: .4rem;
+  }
   .verify-main { padding: 1rem .65rem 2.5rem; }
   .verify-title { font-size: 1.28rem; }
   .verify-doc-card { padding: 1rem .75rem; }
+}
+
+@media (max-width: 420px) {
+  .verify-header {
+    height: 50px;
+    min-height: 50px;
+  }
+  .verify-header-inner {
+    padding: 0 .5rem;
+    gap: .35rem;
+  }
+  .verify-header-brand {
+    gap: .35rem;
+  }
+  .verify-header-brand .logo {
+    width: 28px !important;
+    height: 28px !important;
+  }
+  .verify-header-brand .brand-title {
+    font-size: .84rem;
+    gap: .25rem;
+  }
+  .verify-header-brand .brand-badge {
+    font-size: .62rem;
+    padding: .02rem .22rem;
+  }
+  .verify-login-text-short {
+    display: none;
+  }
+  .verify-login-btn {
+    padding: .3rem .45rem !important;
+    min-width: 34px;
+    justify-content: center;
+  }
+  .verify-header-tools {
+    gap: .3rem;
+  }
+  .verify-title {
+    font-size: 1.15rem;
+  }
+  .verify-desc {
+    font-size: .84rem;
+  }
+  .verify-badge-card {
+    padding: .9rem .75rem;
+    gap: .75rem;
+  }
+  .verify-badge-icon svg {
+    width: 36px;
+    height: 36px;
+  }
 }

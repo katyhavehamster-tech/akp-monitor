@@ -119,7 +119,7 @@ export default function Verify() {
       <header className="verify-header no-print">
         <div className="verify-header-inner">
           <div className="verify-header-brand">
-            <Emblem size={38} />
+            <Emblem size={38} className="verify-logo" />
             <div className="brand-text">
               <div className="brand-title">
                 АКП-Монітор <span className="brand-badge">ХНУВС</span>
@@ -129,7 +129,7 @@ export default function Verify() {
           </div>
 
           <div className="verify-header-tools">
-            <span className="pill ok hide-xs">Офіційний реєстр · ДСТУ 4163:2020</span>
+            <span className="pill ok verify-header-pill">Офіційний реєстр · ДСТУ 4163:2020</span>
             <button
               type="button"
               className="btn secondary small icon"
@@ -139,9 +139,10 @@ export default function Verify() {
             >
               {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
             </button>
-            <Link to="/login" className="btn primary small">
+            <Link to="/login" className="btn primary small verify-login-btn" title="Увійти в кабінет">
               <LogIn size={15} />
-              <span>Увійти в кабінет</span>
+              <span className="verify-login-text-full">Увійти в кабінет</span>
+              <span className="verify-login-text-short">Увійти</span>
             </Link>
           </div>
         </div>
