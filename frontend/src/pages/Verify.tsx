@@ -369,7 +369,19 @@ export default function Verify() {
                         <button
                           type="button"
                           className="btn secondary small"
-                          onClick={() => window.print()}
+                          onClick={() => {
+                            if (res?.snapshot) {
+                              api('audit/log-print', {
+                                method: 'POST',
+                                body: {
+                                  title: `Верифікований звіт #${res.snapshot.id.slice(0, 8)} (${res.snapshot.year} р., ${res.snapshot.half === 1 ? 'I' : 'II'} півріччя)`,
+                                  obj_id: `snapshot_${res.snapshot.id.slice(0, 8)}`,
+                                  obj_type: 'zvit',
+                                },
+                              }).catch(() => {})
+                            }
+                            window.print()
+                          }}
                         >
                           <Printer size={15} />
                           <span>Роздрукувати звіт</span>

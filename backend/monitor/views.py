@@ -16,6 +16,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator
 from django.db import transaction
+from django.db.models import Q
 from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -343,13 +344,15 @@ def system_settings(request):
             "reminder_days": (1, 180),
             "min_survey_group": (3, 100),
         }
-        for f in ("today_override", "window_days", "reminder_days", "min_survey_group", "signatory_name", "head_signatory_name"):
+        for f in ("today_override", "window_days", "reminder_days", "min_survey_group", "signatory_name", "head_signatory_name", "izod_audit_mode"):
             if f in request.data:
                 v = request.data[f]
                 if f == "today_override":
                     v = _parse_date(v, field=f, allow_empty=True)
                 elif f in ("signatory_name", "head_signatory_name"):
                     v = str(v or "").strip()[:200]
+                elif f == "izod_audit_mode":
+                    v = bool(v)
                 else:
                     lo, hi = limits[f]
                     v = _parse_int(v, field=f, min_val=lo, max_val=hi)
@@ -364,7 +367,9 @@ def system_settings(request):
                      "window_days": s.window_days, "reminder_days": s.reminder_days,
                      "min_survey_group": s.min_survey_group,
                      "signatory_name": sig1,
-                     "head_signatory_name": sig2})
+                     "head_signatory_name": sig2,
+                     "izod_audit_mode": s.izod_audit_mode,
+                     "is_izod_active": SystemSettings.is_izod_active()})
 
 
 @api_view(["GET"])
@@ -453,6 +458,24 @@ def measure_detail(request, code):
     m = get_object_or_404(Measure.objects.select_related("section", "risk", "responsible_unit"), code=code)
     if not can_see_measure(p, m):
         raise PermissionDenied("Цей захід належить іншому підрозділу.")
+    if request.method == "GET" and SystemSettings.is_izod_active():
+        from datetime import timedelta
+        recent = AuditLog.objects.filter(
+            actor=p,
+            action="перегляд картки заходу",
+            obj_id=m.code,
+            ts__gte=timezone.now() - timedelta(seconds=10)
+        ).exists()
+        if not recent:
+            AuditLog.write(
+                p,
+                "перегляд картки заходу",
+                "zakhid",
+                m.code,
+                field="kartka",
+                old="",
+                new=f"Картка {m.code} ({m.responsible_unit.code if m.responsible_unit else ''}): {m.content[:80]}",
+            )
     if request.method == "PATCH":
         require(request, CONTENT_EDIT, "Змінювати план заходу може лише уповноважений.")
         editable = ["content", "strok_text", "indicator", "indicator_unit", "required_evidence", "resources"]
@@ -655,6 +678,16 @@ def evidence_file(request, code):
     except OSError:
         return Response({"detail": "Файл підтвердження не знайдено на диску."}, status=404)
     fname = Path(e.file.name).name
+    if SystemSettings.is_izod_active():
+        AuditLog.write(
+            p,
+            "завантаження підтвердного документа",
+            "pidtverdzhennia",
+            e.code,
+            field="file",
+            old="",
+            new=f"Файл: {fname} (захід {e.measure.code}, SHA-256: {e.sha256[:12]}…)",
+        )
     resp = FileResponse(fh, as_attachment=True, filename=fname)
     resp["X-Content-Type-Options"] = "nosniff"
     resp["Content-Security-Policy"] = "default-src 'none'; sandbox"
@@ -919,11 +952,41 @@ def report_portal(request):
     verify_url = f"{base_url}/verify?id={snapshot.id}&sig={snapshot.signature}"
 
     if fmt == "docx":
+        if SystemSettings.is_izod_active():
+            AuditLog.write(
+                user_p,
+                "експорт звіту Word (ДСТУ 4163:2020)",
+                "zvit",
+                f"portal_{year}_h{half}",
+                field="format",
+                old="",
+                new=f"Word (.docx) за {half} півріччя {year} р.",
+            )
         from .reports_docx import portal_docx
         return _docx_response(fname + ".docx", portal_docx(year, half, user_profile=user_p, base_url=base_url))
     if fmt == "csv":
+        if SystemSettings.is_izod_active():
+            AuditLog.write(
+                user_p,
+                "експорт звіту CSV",
+                "zvit",
+                f"portal_{year}_h{half}",
+                field="format",
+                old="",
+                new=f"CSV (.csv) за {half} півріччя {year} р.",
+            )
         return _csv_response(fname + ".csv", keys, [[r[k] for k in keys] for r in rows])
     if fmt == "xlsx":
+        if SystemSettings.is_izod_active():
+            AuditLog.write(
+                user_p,
+                "експорт звіту Excel",
+                "zvit",
+                f"portal_{year}_h{half}",
+                field="format",
+                old="",
+                new=f"Excel (.xlsx) за {half} півріччя {year} р.",
+            )
         sheets = []
         for sec in Section.objects.filter(program=pr):
             data = [[r[k] for k in keys] for r in rows if r["rozdil_portal"] == sec.portal_name]
@@ -997,6 +1060,19 @@ def verify_report(request):
 
     # Якщо запитується експорт у Word для верифікованого звіту
     if request.query_params.get("format") == "docx":
+        if SystemSettings.is_izod_active():
+            u = request.user if request.user.is_authenticated else None
+            p = getattr(u, "profile", None) if u else None
+            AuditLog.write(
+                p,
+                "експорт верифікованого звіту Word (ДСТУ 4163:2020)",
+                "zvit",
+                f"snapshot_{str(snapshot.id)[:8]}",
+                field="format",
+                old="",
+                new=f"Word (.docx) зліпка #{str(snapshot.id)[:8]}",
+                actor_code=p.code if p else "Гість/Публічний",
+            )
         from .reports_docx import portal_docx
         base_url = request.build_absolute_uri("/").rstrip("/")
         fname = f"zvit_portal_{snapshot.year}_h{snapshot.half}_verified.docx"
@@ -1070,6 +1146,16 @@ def report_internal(request):
         if hasattr(row[10], "isoformat"):
             row[10] = row[10].isoformat()
     fmt = request.query_params.get("format", "xlsx")
+    if fmt in ("csv", "xlsx") and SystemSettings.is_izod_active():
+        AuditLog.write(
+            p,
+            f"експорт внутрішнього звіту {fmt.upper()}",
+            "zvit",
+            f"internal_{period.code}",
+            field="format",
+            old="",
+            new=f"Внутрішній звіт ({fmt.upper()}) за {period.code}",
+        )
     if fmt == "csv":
         return _csv_response(f"vnutrishnii_zvit_{period.code}.csv", header, data)
     flag_rows = [[f["code"], f["title"], f["object"], f["id"], f.get("unit") or "", f["explanation"], f["rule"]]
@@ -1084,6 +1170,16 @@ def report_note(request):
     require(request, VIEW_ALL)
     period = get_period(request)
     if request.query_params.get("format") == "docx":
+        if SystemSettings.is_izod_active():
+            AuditLog.write(
+                profile(request),
+                "експорт аналітичної довідки Word",
+                "dovidka",
+                f"note_{period.code}",
+                field="format",
+                old="",
+                new=f"Аналітична довідка (.docx) за {period.code}",
+            )
         from .reports_docx import note_docx
         return _docx_response(f"analitychna_dovidka_{period.code}.docx", note_docx(period))
     note = R.analytic_note(period)
@@ -1091,6 +1187,16 @@ def report_note(request):
     note["signatory_name"] = sig1
     note["head_signatory_name"] = sig2
     if request.query_params.get("format") == "md":
+        if SystemSettings.is_izod_active():
+            AuditLog.write(
+                profile(request),
+                "експорт аналітичної довідки Markdown",
+                "dovidka",
+                f"note_{period.code}",
+                field="format",
+                old="",
+                new=f"Аналітична довідка (.md) за {period.code}",
+            )
         resp = HttpResponse(note["markdown"], content_type="text/markdown; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="analitychna_dovidka_{period.code}.md"'
         return resp
@@ -1114,19 +1220,41 @@ def _audit_dict(a: AuditLog):
             "hash": a.hash, "prev_hash": a.prev_hash}
 
 
-@api_view(["GET"])
-def audit(request):
-    require(request, AUDIT, "Журнал дій доступний уповноваженому, техадміністратору, керівнику та аналітику.")
-    qs = AuditLog.objects.select_related("actor").order_by("-id")
-    q = request.query_params
+def _filter_audit_qs(qs, q):
     if q.get("obj_id"):
-        qs = qs.filter(obj_id=q["obj_id"])
+        qs = qs.filter(obj_id=q["obj_id"].strip())
     if q.get("actor"):
         act = q["actor"].strip()
         qs = qs.filter(actor_code__iexact=act) | qs.filter(actor__code__iexact=act)
     if q.get("action"):
-        qs = qs.filter(action__icontains=q["action"])
-    limit = _parse_int(q.get("limit", 200), field="limit", min_val=1, max_val=2000)
+        qs = qs.filter(action__icontains=q["action"].strip())
+    category = q.get("category", "").strip().lower()
+    if category == "views":
+        qs = qs.filter(action__icontains="перегляд")
+    elif category == "evidence":
+        qs = qs.filter(Q(action__icontains="завантаження підтвердного") | Q(obj_type="evidence_file"))
+    elif category == "export":
+        qs = qs.filter(Q(action__icontains="експорт") | Q(action__icontains="друк"))
+    elif category == "changes":
+        qs = qs.exclude(
+            Q(action__icontains="перегляд")
+            | Q(action__icontains="експорт")
+            | Q(action__icontains="друк")
+            | Q(action__icontains="завантаження підтвердного")
+            | Q(action__icontains="вхід")
+            | Q(action__icontains="вихід")
+        )
+    elif category == "auth":
+        qs = qs.filter(Q(action__icontains="вхід") | Q(action__icontains="вихід"))
+    return qs
+
+
+@api_view(["GET"])
+def audit(request):
+    require(request, AUDIT, "Журнал дій доступний уповноваженому, техадміністратору, керівнику та аналітику.")
+    qs = AuditLog.objects.select_related("actor").order_by("-id")
+    qs = _filter_audit_qs(qs, request.query_params)
+    limit = _parse_int(request.query_params.get("limit", 200), field="limit", min_val=1, max_val=2000)
     return Response({"total": qs.count(), "items": [_audit_dict(a) for a in qs[:limit]]})
 
 
@@ -1139,10 +1267,48 @@ def audit_verify(request):
 @api_view(["GET"])
 def audit_export(request):
     require(request, AUDIT)
+    qs = AuditLog.objects.select_related("actor").order_by("-id")
+    qs = _filter_audit_qs(qs, request.query_params)
+
+    if SystemSettings.is_izod_active():
+        AuditLog.write(
+            profile(request),
+            "експорт журналу аудиту CSV",
+            "audit",
+            "all",
+            "filters",
+            "",
+            f"cat={request.query_params.get('category','')},act={request.query_params.get('action','')}"[:100],
+        )
+
     header = ["id", "chas", "korystuvach", "diia", "obiekt", "obiekt_id", "pole", "stare", "nove", "prev_hash", "hash"]
     data = [[a.id, a.ts.isoformat(), a.resolved_actor_code, a.action, a.obj_type, a.obj_id, a.field,
-             a.old_value, a.new_value, a.prev_hash, a.hash] for a in AuditLog.objects.select_related("actor")]
+             a.old_value, a.new_value, a.prev_hash, a.hash] for a in qs]
     return _csv_response("zhurnal_dii.csv", header, data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def log_print_action(request):
+    """Фіксація факту друку звіту або форми у ланцюжку аудиту (режим ІзОД)."""
+    u = request.user if request.user and request.user.is_authenticated else None
+    p = getattr(u, "profile", None) if u else None
+    d = request.data or {}
+    title = str(d.get("title") or "Друк звіту").strip()[:200]
+    obj_id = str(d.get("obj_id") or "print").strip()[:30]
+    obj_type = str(d.get("obj_type") or "zvit").strip()[:30]
+    if SystemSettings.is_izod_active():
+        AuditLog.write(
+            p,
+            f"друк: {title}",
+            obj_type,
+            obj_id,
+            field="druk",
+            old="",
+            new="Друк через веб-браузер",
+            actor_code=p.code if p else "Гість/Публічний",
+        )
+    return Response({"ok": True})
 
 
 # ---------------------------------------------------------------- опитування (лише уповноважений)

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { download, fmtDate, type Any } from '../api'
+import { api, download, fmtDate, type Any } from '../api'
 import { useAuth } from '../auth'
 import { Card, ErrorBox, Loading, Markdown, Pill, PORTAL_TONE, Tabs, useApi } from '../components/ui'
 
@@ -44,7 +44,11 @@ function Portal() {
           <button type="button" className="btn secondary" onClick={() => download(`reports/portal?year=${year}&half=${half}&format=xlsx`, `zvit_portal_${year}_h${half}.xlsx`)}>XLSX (аркуш на розділ)</button>
           <button type="button" className="btn secondary" onClick={() => download(`reports/portal?year=${year}&half=${half}&format=csv`, `zvit_portal_${year}_h${half}.csv`)}>CSV</button>
           <button type="button" className="btn gold" onClick={() => download(`reports/portal?year=${year}&half=${half}&format=docx`, `zvit_portal_${year}_h${half}.docx`)}>Друкована форма (Word, ДСТУ 4163:2020)</button>
-          <button type="button" className="btn secondary" onClick={() => { setPrintForm(true); setTimeout(() => window.print(), 150) }}>Друк</button>
+          <button type="button" className="btn secondary" onClick={() => {
+            api('audit/log-print', { method: 'POST', body: { title: `Звіт для Порталу (${year}, ${half} півр.)`, obj_id: `portal_${year}_h${half}`, obj_type: 'zvit' } }).catch(() => {})
+            setPrintForm(true)
+            setTimeout(() => window.print(), 150)
+          }}>Друк</button>
         </div>
       </div>
       <p className="muted" style={{ marginTop: '.6rem' }}>Поля відповідають формі Порталу доброчесності: три розділи; «Фактичний строк виконання», «Стан виконання»,
@@ -129,7 +133,10 @@ function Note() {
   return <Card actions={<span className="no-print row">
     <button className="btn gold" onClick={() => download(`reports/note?period=${period}&format=docx`, `analitychna_dovidka_${period}.docx`)}>Завантажити Word (ДСТУ 4163:2020)</button>
     <button className="btn secondary" onClick={() => download(`reports/note?period=${period}&format=md`, `analitychna_dovidka_${period}.md`)}>Markdown</button>
-    <button className="btn secondary" onClick={() => window.print()}>Друк / PDF</button></span>}>
+    <button className="btn secondary" onClick={() => {
+      api('audit/log-print', { method: 'POST', body: { title: `Аналітична довідка (${period})`, obj_id: `note_${period}`, obj_type: 'dovidka' } }).catch(() => {})
+      window.print()
+    }}>Друк / PDF</button></span>}>
     <Markdown text={data.markdown} />
     <div className="print-only">
       <div className="print-sig-grid">

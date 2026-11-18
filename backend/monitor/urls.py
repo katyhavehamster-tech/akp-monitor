@@ -37,6 +37,7 @@ urlpatterns = [
     path("audit", v.audit),
     path("audit/verify", v.audit_verify),
     path("audit/export", v.audit_export),
+    path("audit/log-print", v.log_print_action),
     path("surveys", v.surveys),
     path("surveys/compare", v.survey_compare),
     path("surveys/<int:pk>", v.survey_delete),

@@ -185,6 +185,21 @@ export function AdminSystem() {
         <label className="f">Нагадувати про строк за, днів<input type="number" defaultValue={s.data.reminder_days} onBlur={e => save({ reminder_days: e.target.value })} /></label>
         <label className="f">Мінімум відповідей для показу результатів опитування<input type="number" defaultValue={s.data.min_survey_group} onBlur={e => save({ min_survey_group: e.target.value })} /></label>
         <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '1rem 0' }} />
+        <label className="row" style={{ gap: '.6rem', alignItems: 'flex-start', cursor: 'pointer', marginBottom: '1rem' }}>
+          <input
+            type="checkbox"
+            checked={!!s.data.izod_audit_mode}
+            onChange={e => save({ izod_audit_mode: e.target.checked })}
+            style={{ marginTop: '.2rem' }}
+          />
+          <div>
+            <b>Режим ІзОД: посилений аудит переглядів та експорту</b>
+            <div className="muted" style={{ fontSize: '.85rem', marginTop: '.2rem' }}>
+              Фіксувати в незмінному криптографічному ланцюжку SHA-256 не лише зміни даних, а й кожне відкриття картки заходу, вивантаження підтвердних файлів (Evidence) та експорт/друк звітів.
+            </div>
+          </div>
+        </label>
+        <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '1rem 0' }} />
         <label className="f">Власне імʼя та ПРІЗВИЩЕ уповноваженої особи / спеціаліста (для підпису при Друці та у Word)
           <input value={sig1} onChange={e => setSig1(e.target.value)} placeholder="Олександр КОВАЛЕНКО" /></label>
         <label className="f">Власне імʼя та ПРІЗВИЩЕ керівника органу (для підпису при Друці та у Word)

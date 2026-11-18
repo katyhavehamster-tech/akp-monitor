@@ -394,6 +394,7 @@ class SystemSettings(models.Model):
     min_survey_group = models.PositiveSmallIntegerField("Мінімальна кількість відповідей для показу", default=5)
     signatory_name = models.CharField("Власне імʼя ПРІЗВИЩЕ уповноваженої особи (для Word-звітів)", max_length=200, default="Олександр КОВАЛЕНКО", blank=True)
     head_signatory_name = models.CharField("Власне імʼя ПРІЗВИЩЕ керівника органу (для Word-звітів)", max_length=200, default="Валерій СОКОЛОВ", blank=True)
+    izod_audit_mode = models.BooleanField("Режим ІзОД: посилений аудит переглядів та експорту", default=True)
 
     @classmethod
     def get(cls):
@@ -424,6 +425,14 @@ class SystemSettings(models.Model):
     def today(cls) -> date:
         s = cls.get()
         return s.today_override or timezone.localdate()
+
+    @classmethod
+    def is_izod_active(cls) -> bool:
+        pr = Program.objects.first()
+        if pr and pr.restricted_info:
+            return True
+        s = cls.get()
+        return bool(s.izod_audit_mode)
 
 
 class AuditLog(models.Model):

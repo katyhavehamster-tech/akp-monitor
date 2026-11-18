@@ -6,7 +6,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from monitor.models import AuditLog, Evidence, ReportingPeriod, ReportSnapshot, SystemSettings
+from monitor.models import AuditLog, Evidence, Program, ReportingPeriod, ReportSnapshot, SystemSettings
 from monitor.selfcheck import run_selfcheck
 from monitor.surveys import compare, parse_csv
 
@@ -299,4 +299,68 @@ class ReportVerification(Base):
         # Перевірка що вміст docx містить бінарні zip-структури
         self.assertTrue(len(r.content) > 5000)
         self.assertTrue(r.content.startswith(b"PK\x03\x04"))
+
+    def test_read_and_export_audit_trail_in_izod_mode(self):
+        """Перевірка журналу переглядів, завантажень та експорту в режимі ІзОД."""
+        s = SystemSettings.get()
+        s.izod_audit_mode = True
+        s.save()
+        self.assertTrue(SystemSettings.is_izod_active())
+
+        c = self.client_for("u-002")
+
+        # 1. Відкриття картки заходу
+        r_view = c.get("/api/measures/Z-01")
+        self.assertEqual(r_view.status_code, 200)
+
+        view_logs = AuditLog.objects.filter(action="перегляд картки заходу", obj_id="Z-01")
+        self.assertTrue(view_logs.exists())
+        first_count = view_logs.count()
+
+        # 1.1 Перевірка дебоунсу (повторний запит одразу не плодить дублі)
+        c.get("/api/measures/Z-01")
+        self.assertEqual(AuditLog.objects.filter(action="перегляд картки заходу", obj_id="Z-01").count(), first_count)
+
+        # 2. Експорт звіту Порталу Word
+        r_docx = c.get("/api/reports/portal?year=2026&half=1&format=docx")
+        self.assertEqual(r_docx.status_code, 200)
+        export_logs = AuditLog.objects.filter(action__icontains="експорт звіту Word")
+        self.assertTrue(export_logs.exists())
+
+        # 3. Друк звіту через клієнтський ендпоїнт
+        r_print = c.post(
+            "/api/audit/log-print",
+            {"title": "Тестовий друк звіту", "obj_id": "zvit-test", "obj_type": "zvit"},
+            format="json",
+        )
+        self.assertEqual(r_print.status_code, 200)
+        print_logs = AuditLog.objects.filter(action__icontains="друк: Тестовий друк звіту")
+        self.assertTrue(print_logs.exists())
+
+        # 4. Фільтрація в API за категоріями
+        r_cat_views = c.get("/api/audit?category=views")
+        self.assertEqual(r_cat_views.status_code, 200)
+        self.assertTrue(any("перегляд" in item["action"] for item in r_cat_views.json()["items"]))
+
+        r_cat_export = c.get("/api/audit?category=export")
+        self.assertEqual(r_cat_export.status_code, 200)
+        self.assertTrue(any("експорт" in item["action"] or "друк" in item["action"] for item in r_cat_export.json()["items"]))
+
+        # 5. Цілісність ланцюжка SHA-256
+        chain_res = AuditLog.verify_chain()
+        self.assertTrue(chain_res["ok"])
+        self.assertGreater(chain_res["checked"], 5)
+
+        # 6. Коли ІзОД вимкнено - перегляд не логується
+        s.izod_audit_mode = False
+        s.save()
+        pr = Program.objects.first()
+        if pr:
+            pr.restricted_info = False
+            pr.save()
+        self.assertFalse(SystemSettings.is_izod_active())
+
+        c.get("/api/measures/Z-02")
+        self.assertFalse(AuditLog.objects.filter(action="перегляд картки заходу", obj_id="Z-02").exists())
+
 

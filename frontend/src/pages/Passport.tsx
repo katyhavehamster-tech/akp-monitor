@@ -19,8 +19,16 @@ export default function Passport() {
         <dt>Затверджено</dt><dd>{data.approved}</dd>
         <dt>Погодження НАЗК</dt><dd>{data.nazk_status}</dd>
         <dt>Координатор програми</dt><dd>{data.coordinator_unit?.code} {data.coordinator_unit?.name}</dd>
-        <dt>Інформація з обмеженим доступом</dt><dd>{data.restricted_info ? 'так — звіт подається на папері (друкована форма)' : 'ні — звіт заповнюється на Порталі'}
-          {profile?.role === 'KOORD' && <> <button className="btn secondary small" onClick={toggle}>змінити</button></>}</dd>
+        <dt>Інформація з обмеженим доступом (ІзОД)</dt><dd>
+          {data.restricted_info ? (
+            <span>
+              <span className="pill warn" style={{ marginRight: '.4rem' }}>Режим ІзОД активний</span>
+              так — друкована форма / посилений аудит переглядів та вивантажень (SHA-256)
+            </span>
+          ) : (
+            <span>ні — стандартний моніторинг (звіт заповнюється на Порталі НАЗК)</span>
+          )}
+          {profile?.role === 'KOORD' && <> <button className="btn secondary small" onClick={toggle} style={{ marginLeft: '.5rem' }}>змінити</button></>}</dd>
         <dt>Обсяг</dt><dd>{data.measures} заходів, {data.risks} корупційних ризиків</dd>
       </dl>
       <h3 style={{ marginTop: '1rem' }}>Цілі програми</h3><p>{data.goals}</p>
