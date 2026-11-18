@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, fmtDate, type Any } from '../api'
 import { useAuth } from '../auth'
 import { Card, ErrorBox, Loading, Pill, useApi } from '../components/ui'
@@ -7,13 +7,26 @@ const ROLES: [string, string][] = [['KOORD', 'Уповноважений (адм
   ['KER', 'Керівник'], ['VYK', 'Виконавець'], ['ANAL', 'Аналітик']]
 
 export function AdminUsers() {
+  const { profile, reloadMe } = useAuth()
   const { data, error, reload } = useApi<Any[]>('users')
   const units = useApi<Any[]>('units')
+  const sys = useApi<Any>('settings')
   const [f, setF] = useState<Any>({ role: 'VYK' })
+  const [sig1, setSig1] = useState('')
+  const [sig2, setSig2] = useState('')
   const [err, setErr] = useState('')
   const [pwFor, setPwFor] = useState<string | null>(null)
+  const [delFor, setDelFor] = useState<string | null>(null)
   const [pw, setPw] = useState('')
   const [ok, setOk] = useState('')
+
+  useEffect(() => {
+    if (sys.data) {
+      setSig1(sys.data.signatory_name || '')
+      setSig2(sys.data.head_signatory_name || '')
+    }
+  }, [sys.data])
+
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
   const create = async () => {
@@ -22,41 +35,86 @@ export function AdminUsers() {
   }
   const patch = async (code: string, body: Any, msg = 'Збережено.') => {
     setErr(''); setOk('')
-    try { await api(`users/${code}`, { method: 'PATCH', body }); setOk(`${code}: ${msg}`); reload() } catch (e) { setErr((e as Error).message) }
+    try { await api(`users/${code}`, { method: 'PATCH', body }); setOk(`${code}: ${msg}`); reload(); sys.reload(); await reloadMe() } catch (e) { setErr((e as Error).message) }
+  }
+  const saveSignatories = async () => {
+    setErr(''); setOk('')
+    try {
+      await api('settings', { method: 'PATCH', body: { signatory_name: sig1, head_signatory_name: sig2 } })
+      setOk('ПІБ підписантів для звітів (Друк та Word) успішно збережено!')
+      reload(); sys.reload(); await reloadMe()
+    } catch (e) { setErr((e as Error).message) }
+  }
+  const removeUser = async (code: string) => {
+    setErr(''); setOk('')
+    try {
+      await api(`users/${code}`, { method: 'DELETE' })
+      setDelFor(null)
+      setOk(`Користувача ${code} видалено.`)
+      reload()
+    } catch (e) { setErr((e as Error).message) }
   }
   return <>
     <h1>Користувачі та ролі</h1>
-    <div className="hint">Облікові записи описують лише роль, підрозділ і посаду — без імен і персональних даних. Виконавець бачить і заповнює тільки заходи свого підрозділу.
-      Технічний адміністратор не змінює зміст програми.</div>
+    <Card title="Умовні реквізити підписантів для друкованих форм і звітів Word (ДСТУ 4163:2020)">
+      <div className="grid g3" style={{ alignItems: 'end' }}>
+        <label className="f">Уповноважена особа / головний спеціаліст (умовне Власне імʼя ПРІЗВИЩЕ)
+          <input value={sig1} onChange={e => setSig1(e.target.value)} placeholder="Олександр КОВАЛЕНКО" />
+        </label>
+        <label className="f">Керівник органу (умовне Власне імʼя ПРІЗВИЩЕ)
+          <input value={sig2} onChange={e => setSig2(e.target.value)} placeholder="Валерій СОКОЛОВ" />
+        </label>
+        <div style={{ marginBottom: '.85rem' }}>
+          <button type="button" className="btn" onClick={saveSignatories}>Зберегти реквізити</button>
+        </div>
+      </div>
+      <small className="muted">Облікові записи в системі знеособлені (описані лише кодом, роллю, підрозділом і посадою — без персональних даних). Умовні імена вище підставляються виключно у реквізит «Підпис» паперових і Word-звітів за ДСТУ 4163:2020.</small>
+    </Card>
+
     <Card title="Новий обліковий запис">
-      <div className="grid g4" style={{ alignItems: 'end' }}>
+      <div className="grid g3" style={{ alignItems: 'end' }}>
         <label className="f">Код (логін)<input value={f.code || ''} onChange={e => setF({ ...f, code: e.target.value })} placeholder="U-020" /></label>
         <label className="f">Роль<select value={f.role} onChange={e => setF({ ...f, role: e.target.value })}>{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
         <label className="f">Підрозділ<select value={f.unit || ''} onChange={e => setF({ ...f, unit: e.target.value })}><option value="">—</option>
           {units.data?.map(u => <option key={u.code} value={u.code}>{u.code} {u.name}</option>)}</select></label>
-        <label className="f">Посада<input value={f.position || ''} onChange={e => setF({ ...f, position: e.target.value })} /></label>
-        <label className="f">Початковий пароль<input value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} placeholder="demo" /></label>
-        <div style={{ marginBottom: '.75rem' }}><button className="btn" onClick={create}>Створити</button></div>
+        <label className="f">Посада<input value={f.position || ''} onChange={e => setF({ ...f, position: e.target.value })} placeholder="Головний спеціаліст" /></label>
+        <div className="admin-create-pw span2-lg">
+          <label className="f" style={{ flex: 1, marginBottom: 0 }}>Пароль
+            <input type="password" value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} placeholder="demo" />
+          </label>
+          <button type="button" className="btn" onClick={create}>Створити</button>
+        </div>
       </div>
       {err && <div className="alert danger">{err}</div>}
     </Card>
     {ok && <div className="alert success">{ok}</div>}
-    {err && <div className="alert danger">{err}</div>}
-    <Card><div className="table-wrap"><table className="t"><thead><tr><th>Код</th><th>Роль</th><th>Підрозділ</th><th>Посада</th><th>Стан</th><th></th></tr></thead><tbody>
+    <Card><div className="table-wrap"><table className="t"><thead><tr><th>Код</th><th>Роль</th><th>Підрозділ</th><th>Посада</th><th>Стан</th><th>Дії</th></tr></thead><tbody>
       {data.map(u => <tr key={u.code}>
-        <td><b>{u.code}</b><br /><small className="muted">{u.username}</small></td>
-        <td><select value={u.role} onChange={e => patch(u.code, { role: e.target.value })}>{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></td>
-        <td><select value={u.unit?.code || ''} onChange={e => patch(u.code, { unit: e.target.value })}><option value="">—</option>
+        <td className="nowrap"><b>{u.code}</b><br /><small className="muted">{u.username}</small></td>
+        <td style={{ minWidth: 175 }}><select style={{ width: '100%', minWidth: 160 }} value={u.role} onChange={e => patch(u.code, { role: e.target.value })}>{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></td>
+        <td style={{ minWidth: 90 }}><select style={{ width: '100%', minWidth: 74 }} value={u.unit?.code || ''} onChange={e => patch(u.code, { unit: e.target.value })}><option value="">—</option>
           {units.data?.map(x => <option key={x.code} value={x.code}>{x.code}</option>)}</select></td>
-        <td><small>{u.position}</small></td>
-        <td>{u.is_active ? <Pill tone="ok">активний</Pill> : <Pill tone="grey">заблоковано</Pill>}</td>
-        <td className="row">
-          <button className="btn secondary small" onClick={() => patch(u.code, { is_active: !u.is_active })}>{u.is_active ? 'Заблокувати' : 'Розблокувати'}</button>
-          {pwFor === u.code
-            ? <span className="row"><input type="password" placeholder="новий пароль" value={pw} onChange={e => setPw(e.target.value)} style={{ width: 130 }} />
-              <button className="btn small" disabled={!pw} onClick={async () => { await patch(u.code, { password: pw }, 'пароль змінено.'); setPwFor(null); setPw('') }}>Зберегти</button>
-              <button className="btn secondary small" onClick={() => setPwFor(null)}>Скасувати</button></span>
-            : <button className="btn secondary small" onClick={() => { setPwFor(u.code); setPw('') }}>Скинути пароль</button>}
+        <td style={{ minWidth: 180 }}><small>{u.position}</small></td>
+        <td className="nowrap">{u.is_active ? <Pill tone="ok">активний</Pill> : <Pill tone="grey">заблоковано</Pill>}</td>
+        <td>
+          <div className="row" style={{ flexWrap: 'nowrap' }}>
+            <button type="button" className="btn secondary small" onClick={() => patch(u.code, { is_active: !u.is_active })}>{u.is_active ? 'Заблокувати' : 'Розблокувати'}</button>
+            {pwFor === u.code
+              ? <span className="row" style={{ flexWrap: 'nowrap' }}><input type="password" placeholder="новий пароль" value={pw} onChange={e => setPw(e.target.value)} style={{ width: 135, minWidth: 120 }} />
+                <button type="button" className="btn small" disabled={!pw} onClick={async () => { await patch(u.code, { password: pw }, 'пароль змінено.'); setPwFor(null); setPw('') }}>Зберегти</button>
+                <button type="button" className="btn secondary small" onClick={() => setPwFor(null)}>Скасувати</button></span>
+              : <button type="button" className="btn secondary small" onClick={() => { setPwFor(u.code); setPw('') }}>Скинути пароль</button>}
+            {profile?.code !== u.code && (
+              delFor === u.code ? (
+                <span className="row" style={{ flexWrap: 'nowrap' }}>
+                  <button type="button" className="btn danger small" onClick={() => removeUser(u.code)}>Підтвердити</button>
+                  <button type="button" className="btn secondary small" onClick={() => setDelFor(null)}>Ні</button>
+                </span>
+              ) : (
+                <button type="button" className="btn danger small" onClick={() => setDelFor(u.code)}>Видалити</button>
+              )
+            )}
+          </div>
         </td>
       </tr>)}
     </tbody></table></div></Card>
@@ -82,7 +140,7 @@ export function AdminPeriods() {
       уповноважений може вносити зміни будь-коли. Вікно можна відкрити позачергово (наприклад, для виправлень на вимогу координатора).</div>
     {err && <div className="alert danger">{err}</div>}
     {ok && <div className="alert success">{ok}</div>}
-    <Card><table className="t"><thead><tr><th>Період</th><th>Квартал</th><th>Початок вікна</th><th>Кінець вікна</th><th>Стан</th><th>Позачергово</th></tr></thead><tbody>
+    <Card><div className="table-wrap"><table className="t"><thead><tr><th>Період</th><th>Квартал</th><th>Початок вікна</th><th>Кінець вікна</th><th>Стан</th><th>Позачергово</th></tr></thead><tbody>
       {periods.map(p => <tr key={p.code}>
         <td><b>{p.code}</b></td><td>{fmtDate(p.start)} – {fmtDate(p.end)}</td>
         <td><input type="date" defaultValue={p.window_start} onBlur={e => e.target.value !== p.window_start && patch(p.code, { window_start: e.target.value })} /></td>
@@ -90,7 +148,7 @@ export function AdminPeriods() {
         <td>{p.is_open ? <Pill tone="ok">відкрите</Pill> : <Pill tone="grey">закрите</Pill>}</td>
         <td><label className="row" style={{ gap: '.3rem' }}><input type="checkbox" checked={p.force_open} onChange={e => patch(p.code, { force_open: e.target.checked })} /> відкрити</label></td>
       </tr>)}
-    </tbody></table></Card>
+    </tbody></table></div></Card>
   </>
 }
 
@@ -101,7 +159,17 @@ export function AdminSystem() {
   const { reloadMe } = useAuth()
   const s = useApi<Any>('settings')
   const h = useApi<Any>('system/health')
+  const [sig1, setSig1] = useState('')
+  const [sig2, setSig2] = useState('')
   const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    if (s.data) {
+      setSig1(s.data.signatory_name || '')
+      setSig2(s.data.head_signatory_name || '')
+    }
+  }, [s.data])
+
   if (s.error) return <ErrorBox msg={s.error} />
   if (!s.data || !h.data) return <Loading />
   const save = async (body: Any) => {
@@ -110,14 +178,22 @@ export function AdminSystem() {
   return <>
     <h1>Налаштування і стан системи</h1>
     <div className="grid g2" style={{ alignItems: 'start' }}>
-      <Card title="Налаштування">
+      <Card title="Налаштування системи та реквізити підписантів (Друк та Word-звіти)">
         <label className="f">Робоча (демонстраційна) дата — порожньо = сьогодні
           <input type="date" defaultValue={s.data.today_override || ''} onBlur={e => save({ today_override: e.target.value || null })} /></label>
         <label className="f">Тривалість вікна внесення, днів<input type="number" defaultValue={s.data.window_days} onBlur={e => save({ window_days: e.target.value })} /></label>
         <label className="f">Нагадувати про строк за, днів<input type="number" defaultValue={s.data.reminder_days} onBlur={e => save({ reminder_days: e.target.value })} /></label>
         <label className="f">Мінімум відповідей для показу результатів опитування<input type="number" defaultValue={s.data.min_survey_group} onBlur={e => save({ min_survey_group: e.target.value })} /></label>
+        <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '1rem 0' }} />
+        <label className="f">Власне імʼя та ПРІЗВИЩЕ уповноваженої особи / спеціаліста (для підпису при Друці та у Word)
+          <input value={sig1} onChange={e => setSig1(e.target.value)} placeholder="Олександр КОВАЛЕНКО" /></label>
+        <label className="f">Власне імʼя та ПРІЗВИЩЕ керівника органу (для підпису при Друці та у Word)
+          <input value={sig2} onChange={e => setSig2(e.target.value)} placeholder="Валерій СОКОЛОВ" /></label>
+        <div className="row" style={{ marginBottom: '.6rem' }}>
+          <button className="btn" onClick={() => save({ signatory_name: sig1, head_signatory_name: sig2 })}>Зберегти реквізити підписантів</button>
+        </div>
         {msg && <div className="alert success">{msg}</div>}
-        <small className="muted">Кожна зміна налаштувань фіксується в журналі дій.</small>
+        <small className="muted">Кожна зміна налаштувань фіксується в журналі дій і автоматично підтягується під час друку та експорту Word-файлів.</small>
       </Card>
       <Card title="Стан системи">
         <dl className="kv">

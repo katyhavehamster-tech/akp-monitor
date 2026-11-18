@@ -1,21 +1,26 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import Layout from './components/Layout'
-import { AdminPeriods, AdminSystem, AdminUsers } from './pages/Admin'
-import Approvals from './pages/Approvals'
-import Audit from './pages/Audit'
-import CalendarPage from './pages/Calendar'
-import Dashboard from './pages/Dashboard'
-import FlagsPage from './pages/Flags'
+import { Loading } from './components/ui'
 import Login from './pages/Login'
-import MeasureDetail from './pages/MeasureDetail'
-import Measures from './pages/Measures'
-import MyMeasures from './pages/MyMeasures'
-import Passport from './pages/Passport'
-import Recommendations from './pages/Recommendations'
-import Reports from './pages/Reports'
-import Risks from './pages/Risks'
-import Surveys from './pages/Surveys'
+
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Measures = lazy(() => import('./pages/Measures'))
+const MeasureDetail = lazy(() => import('./pages/MeasureDetail'))
+const Approvals = lazy(() => import('./pages/Approvals'))
+const FlagsPage = lazy(() => import('./pages/Flags'))
+const Risks = lazy(() => import('./pages/Risks'))
+const Recommendations = lazy(() => import('./pages/Recommendations'))
+const CalendarPage = lazy(() => import('./pages/Calendar'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Audit = lazy(() => import('./pages/Audit'))
+const Passport = lazy(() => import('./pages/Passport'))
+const Surveys = lazy(() => import('./pages/Surveys'))
+const MyMeasures = lazy(() => import('./pages/MyMeasures'))
+const AdminUsers = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminUsers })))
+const AdminPeriods = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminPeriods })))
+const AdminSystem = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminSystem })))
 
 function Home() {
   const { profile } = useAuth()
@@ -26,36 +31,40 @@ function Home() {
 
 function Guard() {
   const { profile, ready } = useAuth()
-  if (!ready) return <div className="card muted" style={{ margin: '2rem' }}>Завантаження…</div>
+  if (!ready) return <div className="boot-loader" role="status">Завантаження АКП-Монітор…</div>
   if (!profile) return <Navigate to="/login" replace />
   return <Layout />
 }
 
 export default function App() {
-  return <AuthProvider><BrowserRouter><Routes>
-    <Route path="/login" element={<Login />} />
-    <Route element={<Guard />}>
-      <Route path="/" element={<Home />} />
-      <Route path="/surveys" element={<Surveys />} />
-      <Route path="/my" element={<MyMeasures />} />
-      <Route path="/my/calendar" element={<CalendarPage />} />
-      <Route path="/program" element={<Navigate to="/program/dashboard" replace />} />
-      <Route path="/program/dashboard" element={<Dashboard />} />
-      <Route path="/program/measures" element={<Measures />} />
-      <Route path="/program/measures/:code" element={<MeasureDetail />} />
-      <Route path="/program/approvals" element={<Approvals />} />
-      <Route path="/program/flags" element={<FlagsPage />} />
-      <Route path="/program/risks" element={<Risks />} />
-      <Route path="/program/recommendations" element={<Recommendations />} />
-      <Route path="/program/calendar" element={<CalendarPage />} />
-      <Route path="/program/reports" element={<Reports />} />
-      <Route path="/program/audit" element={<Audit />} />
-      <Route path="/program/passport" element={<Passport />} />
-      <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
-      <Route path="/admin/users" element={<AdminUsers />} />
-      <Route path="/admin/periods" element={<AdminPeriods />} />
-      <Route path="/admin/system" element={<AdminSystem />} />
-      <Route path="*" element={<Home />} />
-    </Route>
-  </Routes></BrowserRouter></AuthProvider>
+  return <AuthProvider><BrowserRouter>
+    <Suspense fallback={<Loading />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route element={<Guard />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/surveys" element={<Surveys />} />
+          <Route path="/my" element={<MyMeasures />} />
+          <Route path="/my/calendar" element={<CalendarPage />} />
+          <Route path="/program" element={<Navigate to="/program/dashboard" replace />} />
+          <Route path="/program/dashboard" element={<Dashboard />} />
+          <Route path="/program/measures" element={<Measures />} />
+          <Route path="/program/measures/:code" element={<MeasureDetail />} />
+          <Route path="/program/approvals" element={<Approvals />} />
+          <Route path="/program/flags" element={<FlagsPage />} />
+          <Route path="/program/risks" element={<Risks />} />
+          <Route path="/program/recommendations" element={<Recommendations />} />
+          <Route path="/program/calendar" element={<CalendarPage />} />
+          <Route path="/program/reports" element={<Reports />} />
+          <Route path="/program/audit" element={<Audit />} />
+          <Route path="/program/passport" element={<Passport />} />
+          <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+          <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/periods" element={<AdminPeriods />} />
+          <Route path="/admin/system" element={<AdminSystem />} />
+          <Route path="*" element={<Home />} />
+        </Route>
+      </Routes>
+    </Suspense>
+  </BrowserRouter></AuthProvider>
 }

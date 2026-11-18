@@ -12,6 +12,14 @@ export function setToken(t: string | null) {
   try { if (t) localStorage.setItem('akp_token', t); else localStorage.removeItem('akp_token') } catch { /* ignore */ }
 }
 
+/** Безпечна перевірка зовнішніх URL: дозволяє лише http:// та https:// (захист від javascript:/data:). */
+export function safeUrl(u?: string | null): string | null {
+  if (!u) return null
+  const trimmed = u.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return null
+}
+
 export class ApiError extends Error {
   status: number
   data: Any
@@ -22,14 +30,15 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T = Any>(path: string, opts: { method?: string; body?: Any; form?: FormData } = {}): Promise<T> {
+export async function api<T = Any>(path: string, opts: { method?: string; body?: Any; form?: FormData; keepalive?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = {}
   const t = getToken()
   if (t) headers.Authorization = `Token ${t}`
   let body: BodyInit | undefined
   if (opts.form) body = opts.form
   else if (opts.body !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(opts.body) }
-  const r = await fetch(`/api/${path}`, { method: opts.method || (body ? 'POST' : 'GET'), headers, body })
+  const url = path.startsWith('/api/') ? path : `/api/${path}`
+  const r = await fetch(url, { method: opts.method || (body ? 'POST' : 'GET'), headers, body, keepalive: opts.keepalive })
   if (r.status === 204) return undefined as T
   const ct = r.headers.get('content-type') || ''
   const data = ct.includes('json') ? await r.json() : await r.text()
@@ -40,12 +49,15 @@ export async function api<T = Any>(path: string, opts: { method?: string; body?:
   return data as T
 }
 
-/** Завантаження файлу з авторизацією (експорт CSV/XLSX/MD). */
+/** Завантаження файлу з авторизацією (експорт CSV/XLSX/DOCX/MD та файли підтверджень). */
 export async function download(path: string, filename: string) {
   const t = getToken()
-  const r = await fetch(`/api/${path}`, { headers: t ? { Authorization: `Token ${t}` } : {} })
+  const urlPath = path.startsWith('/api/') ? path : `/api/${path}`
+  const r = await fetch(urlPath, { headers: t ? { Authorization: `Token ${t}` } : {} })
   if (!r.ok) {
-    const msg = `Не вдалося завантажити файл (${r.status}).`
+    const msg = r.status === 403
+      ? 'Недостатньо прав для доступу до цього файлу.'
+      : `Не вдалося завантажити файл (${r.status}).`
     alertBox(msg)
     throw new ApiError(r.status, msg)
   }
@@ -54,8 +66,10 @@ export async function download(path: string, filename: string) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
 export const fmtDate = (d?: string | null) => {
@@ -74,6 +88,7 @@ export const num = (v: Any) => (v === null || v === undefined || v === '' ? '—
 export function alertBox(text: string) {
   const el = document.createElement('div')
   el.className = 'toast'
+  el.setAttribute('role', 'status')
   el.textContent = text
   document.body.appendChild(el)
   setTimeout(() => el.remove(), 5000)

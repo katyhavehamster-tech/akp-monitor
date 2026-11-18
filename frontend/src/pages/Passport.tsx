@@ -27,13 +27,13 @@ export default function Passport() {
       <p><small className="muted">{data.note}</small></p>
     </Card>
     <Card title="Структура програми">
-      <table className="t"><tbody>{data.sections.map((s: Any) => <tr key={s.code}><td style={{ width: 60 }}><b>{s.number}</b></td><td>{s.portal_name}</td><td>{s.measures} заходів</td></tr>)}</tbody></table>
+      <div className="table-wrap"><table className="t"><tbody>{data.sections.map((s: Any) => <tr key={s.code}><td style={{ width: 60 }}><b>{s.number}</b></td><td>{s.portal_name}</td><td>{s.measures} заходів</td></tr>)}</tbody></table></div>
     </Card>
     {rules.data && <Card title="Явні правила системи (rules.yaml)">
       <p className="muted">Пороги і формулювання можна змінити без програміста. Висновки з наслідками система робить лише за цими правилами (п. 4 Політики використання ШІ).</p>
-      <table className="t"><thead><tr><th>Код</th><th>Сигнал</th><th>Правило</th><th>Важливість</th></tr></thead><tbody>
+      <div className="table-wrap"><table className="t"><thead><tr><th>Код</th><th>Сигнал</th><th>Правило</th><th>Важливість</th></tr></thead><tbody>
         {rules.data.flags.map((f: Any) => <tr key={f.code}><td><b>{f.code}</b></td><td>{f.title}</td><td><small>{f.rule}</small></td><td>{f.severity}</td></tr>)}
-      </tbody></table>
+      </tbody></table></div>
       <h3 style={{ marginTop: '1rem' }}>Ризик невиконання заходу</h3>
       <ul>{Object.entries(rules.data.nonexecution_risk).filter(([k]) => k !== 'params').map(([k, v]: [string, Any]) =>
         <li key={k}>+{v.points} — {v.text.replace('{due_soon_days}', rules.data.nonexecution_risk.params.due_soon_days)}</li>)}</ul>

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { api, fmtDate, fmtDateTime, num, type Any } from '../api'
+import { api, download, fmtDate, fmtDateTime, num, safeUrl, type Any } from '../api'
 import { useAuth } from '../auth'
-import { APPROVAL_TONE, Card, ErrorBox, Loading, Pill, PORTAL_TONE, RISK_TONE, STATUS, StatusPill, useApi } from '../components/ui'
+import { APPROVAL_TONE, C, Card, CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, ErrorBox, FilePicker, Loading, Pill, PORTAL_TONE, RISK_TONE, STATUS, StatusPill, useApi } from '../components/ui'
 
 export default function MeasureDetail() {
   const { code } = useParams()
@@ -56,12 +56,12 @@ export default function MeasureDetail() {
 
     <div className="grid g2" style={{ alignItems: 'start' }}>
       <Card title="Історія за періодами">
-        <table className="t"><thead><tr><th>Період</th><th>Статус</th><th>Внесено</th><th>Погодження</th></tr></thead><tbody>
+        <div className="table-wrap"><table className="t"><thead><tr><th>Період</th><th>Статус</th><th>Внесено</th><th>Погодження</th></tr></thead><tbody>
           {m.history[0].executions.map((e: Any) => <tr key={e.period}>
             <td>{e.period}</td><td><StatusPill s={e.status} /></td>
             <td><small>{e.entered_by || '—'}<br />{fmtDateTime(e.entered_at)}</small></td>
             <td><Pill tone={APPROVAL_TONE[e.approval]}>{e.approval_name}</Pill></td></tr>)}
-        </tbody></table>
+        </tbody></table></div>
       </Card>
       <Card title="Журнал дій щодо заходу">
         <ul className="timeline">{m.audit.map((a: Any) => <li key={a.id}>
@@ -110,9 +110,9 @@ function ExecutionForm({ m, period, onSaved }: { m: Any; period: string; onSaved
       <label className="f">Опис результату виконання або пояснення причин невиконання
         <textarea value={f.result_text} onChange={set('result_text')} placeholder="Вимірюваний результат за індикатором, реквізити документа або посилання. Не повторюйте зміст заходу." /></label>
       {err && <div className="alert danger">{err}</div>}
-      <div className="row">
-        <button className="btn" onClick={() => save(true)}>Зберегти і подати на погодження</button>
-        <button className="btn secondary" onClick={() => save(false)}>Зберегти чернетку</button>
+      <div className="row form-actions">
+        <button type="button" className="btn" onClick={() => save(true)}>Зберегти і подати на погодження</button>
+        <button type="button" className="btn secondary" onClick={() => save(false)}>Зберегти чернетку</button>
       </div>
     </>}
     {res && <div style={{ marginTop: '.8rem' }}>
@@ -139,8 +139,8 @@ function ApprovalPanel({ m, period, onDone }: { m: Any; period: string; onDone: 
     {m.flags.length > 0 && <div className="hint">Перед погодженням перегляньте сигналів: {m.flags.length}.</div>}
     <label className="f">Зауваження для виконавця<textarea value={comment} onChange={e => setComment(e.target.value)} style={{ minHeight: 70 }} /></label>
     {err && <div className="alert danger">{err}</div>}
-    <div className="row"><button className="btn" onClick={() => act('approve')}>Погодити</button>
-      <button className="btn danger" onClick={() => act('return')}>Повернути на доопрацювання</button></div>
+    <div className="row form-actions"><button type="button" className="btn" onClick={() => act('approve')}>Погодити</button>
+      <button type="button" className="btn danger" onClick={() => act('return')}>Повернути на доопрацювання</button></div>
   </Card>
 }
 
@@ -179,21 +179,26 @@ function EvidencePanel({ m, period, onDone }: { m: Any; period: string; onDone: 
   }
   return <Card title={`Підтвердні матеріали (${m.evidence.length})`}>
     <p className="muted">Матеріали незмінні: після завантаження їх не можна змінити чи видалити. Цілісність фіксує контрольна сума SHA-256.</p>
-    {m.evidence.map((e: Any) => <div key={e.code} style={{ borderBottom: '1px solid var(--line)', padding: '.4rem 0' }}>
-      <b>{e.code}</b> · {e.type} · {fmtDate(e.doc_date)} — {e.file ? <a href={e.file} target="_blank" rel="noreferrer">{e.title}</a> : e.title}
-      {e.link && <> · <a href={e.link} target="_blank" rel="noreferrer">посилання</a></>}
-      <div className="hash">SHA-256 {e.sha256} · завантажив {e.uploaded_by} {fmtDateTime(e.uploaded_at)}</div>
-    </div>)}
+    {m.evidence.map((e: Any) => {
+      const safeLink = safeUrl(e.link)
+      return <div key={e.code} style={{ borderBottom: '1px solid var(--line)', padding: '.45rem 0' }}>
+        <b>{e.code}</b> · {e.type} · {fmtDate(e.doc_date)} — {e.file
+          ? <button type="button" className="link-btn" onClick={() => download(e.file, e.filename || `${e.code}`)}>{e.title}</button>
+          : e.title}
+        {safeLink && <> · <a href={safeLink} target="_blank" rel="noopener noreferrer">посилання</a></>}
+        <div className="hash">SHA-256 {e.sha256} · завантажив {e.uploaded_by} {fmtDateTime(e.uploaded_at)}</div>
+      </div>
+    })}
     {!m.evidence.length && <div className="alert warning">Підтвердних матеріалів немає.</div>}
     {allowed && <div style={{ marginTop: '.7rem' }}>
       <div className="grid g3">
         <label className="f">Тип<select value={f.type} onChange={e => setF({ ...f, type: e.target.value })}>
           {['наказ', 'протокол', 'акт', 'звіт', 'реєстр', 'журнал', 'лист', 'посилання'].map(t => <option key={t}>{t}</option>)}</select></label>
         <label className="f">Дата документа<input type="date" value={f.doc_date || ''} onChange={e => setF({ ...f, doc_date: e.target.value })} /></label>
-        <label className="f">Файл<input type="file" onChange={e => setFile(e.target.files?.[0] || null)} /></label>
+        <div className="f">Файл<FilePicker file={file} accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.rtf,.odt,.ods,.png,.jpg,.jpeg,.webp,.zip,.p7s,.sig" onChange={setFile} /></div>
       </div>
       <label className="f">Назва / реквізити<input value={f.title || ''} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Наказ від 12.05.2026 № 45 (умовний)" /></label>
-      <label className="f">Посилання на відкрите джерело (за наявності)<input value={f.link || ''} onChange={e => setF({ ...f, link: e.target.value })} /></label>
+      <label className="f">Посилання на відкрите джерело (https://…)<input type="url" value={f.link || ''} onChange={e => setF({ ...f, link: e.target.value })} placeholder="https://..." /></label>
       {err && <div className="alert danger">{err}</div>}
       <button className="btn secondary" onClick={save}>Додати підтвердження</button>
     </div>}
@@ -207,9 +212,10 @@ function RiskPanel({ r }: { r: Any }) {
     <p className="muted">{r.indicator}: базове {num(r.baseline)}, зараз <b>{num(r.current)}</b>, ціль {num(r.target)} {r.unit}
       {r.progress !== null && <> — пройдено <b>{Math.round(r.progress * 100)}%</b> шляху</>}.</p>
     <div style={{ height: 170 }}><ResponsiveContainer><LineChart data={data}>
-      <CartesianGrid stroke="#eef0f4" /><XAxis dataKey="date" fontSize={11} /><YAxis fontSize={11} domain={['auto', 'auto']} /><Tooltip />
-      <ReferenceLine y={r.target} stroke="#1f8a4c" strokeDasharray="4 4" label={{ value: 'ціль', fontSize: 11 }} />
-      <Line dataKey="value" stroke="#123a78" strokeWidth={2} />
+      <CartesianGrid stroke={C.grid} /><XAxis dataKey="date" fontSize={11} stroke={C.muted} /><YAxis fontSize={11} stroke={C.muted} domain={['auto', 'auto']} />
+      <Tooltip contentStyle={CHART_TOOLTIP_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} />
+      <ReferenceLine y={r.target} stroke={C.ok} strokeDasharray="4 4" label={{ value: 'ціль', fontSize: 11, fill: C.ok }} />
+      <Line dataKey="value" stroke="#3b4fd8" strokeWidth={2} />
     </LineChart></ResponsiveContainer></div>
   </Card>
 }
@@ -221,7 +227,7 @@ function CommentsPanel({ m, period, onDone, canComment }: { m: Any; period: stri
     {m.comments.map((c: Any) => <div key={c.id} className={`alert ${c.is_remark ? 'warning' : 'info'}`}>
       <small><b>{c.author}</b> ({c.author_role}) · {fmtDateTime(c.created_at)}{c.is_remark && ' · зауваження'}</small><br />{c.text}</div>)}
     {!m.comments.length && <p className="muted">Коментарів немає.</p>}
-    {canComment && <div className="row"><input style={{ flex: 1 }} value={t} onChange={e => setT(e.target.value)} placeholder="Коментар…" onKeyDown={e => e.key === 'Enter' && add()} />
-      <button className="btn secondary" onClick={add}>Додати</button></div>}
+    {canComment && <div className="row comment-bar"><input style={{ flex: '1 1 160px' }} value={t} onChange={e => setT(e.target.value)} placeholder="Коментар…" onKeyDown={e => e.key === 'Enter' && add()} />
+      <button type="button" className="btn secondary" onClick={add}>Додати</button></div>}
   </Card>
 }

@@ -11,7 +11,7 @@ interface Ctx {
   period: string
   setPeriod: (p: string) => void
   login: (u: string, p: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   reloadMe: () => Promise<void>
   ready: boolean
 }
@@ -46,7 +46,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPeriod('')
     await reloadMe()
   }
-  const logout = () => { setToken(null); setProfile(null); setPeriod('') }
+  const logout = async () => {
+    if (getToken()) {
+      await api('auth/logout', { method: 'POST', keepalive: true }).catch(() => { /* ignore */ })
+    }
+    setToken(null)
+    setProfile(null)
+    setPeriod('')
+  }
 
   return <AuthCtx.Provider value={{ profile, today, periods, period, setPeriod, login, logout, reloadMe, ready }}>
     {children}

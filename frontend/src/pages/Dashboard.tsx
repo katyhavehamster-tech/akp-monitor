@@ -1,12 +1,16 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bar as RBar, BarChart, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fmtDate, num, type Any } from '../api'
 import { useAuth } from '../auth'
-import { Bar, Card, ErrorBox, Flags, Loading, Pill, RISK_TONE, STATUS, StatusLegend, StatusPill, StatusStack, Stat, useApi } from '../components/ui'
+import { ArrowUpRight, Bell } from 'lucide-react'
+import { Bar, C, Card, CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, Empty, ErrorBox, Flags, Loading, PageHead, Pill, progressColor, RISK_TONE, STATUS, StatusLegend, StatusPill, StatusStack, Stat, useApi, useIsMobile } from '../components/ui'
 
 export default function Dashboard() {
   const { period, profile } = useAuth()
   const { data, error } = useApi<Any>(period ? `dashboard?period=${period}` : null, [period])
+  const [remLimit, setRemLimit] = useState(8)
+  const narrow = useIsMobile(380)
   const nav = useNavigate()
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
@@ -19,16 +23,31 @@ export default function Dashboard() {
   }))
 
   return <>
-    <div className="row" style={{ marginBottom: '.75rem' }}>
-      <h1 style={{ margin: 0 }}>Моніторинг виконання програми</h1>
-      <span className="spacer" />
-      <span className="muted">Період {data.period.code} ({fmtDate(data.period.start)}–{fmtDate(data.period.end)})</span>
-    </div>
+    <PageHead title="Моніторинг виконання програми"
+      sub={<>Період {data.period.code} · {fmtDate(data.period.start)}–{fmtDate(data.period.end)}</>}>
+      <button className="btn secondary" onClick={() => nav('/program/measures')}>Реєстр заходів</button>
+      <button className="btn" onClick={() => nav('/program/reports')}>Сформувати звіт</button>
+    </PageHead>
 
-    {data.reminders.length > 0 && <Card title="Нагадування">
-      {data.reminders.slice(0, 8).map((r: Any, i: number) =>
+    {data.reminders.length > 0 && <Card title={<span className="row" style={{ gap: '.45rem' }}><Bell size={16} />Нагадування <Pill tone="grey">{data.reminders.length}</Pill></span>}>
+      {data.reminders.slice(0, remLimit).map((r: Any, i: number) =>
         <div key={i} className={`alert ${r.level}`}>{r.measure ? <a href={`/program/measures/${r.measure}`} onClick={e => { e.preventDefault(); nav(`/program/measures/${r.measure}`) }}>{r.text}</a> : r.text}</div>)}
-      {data.reminders.length > 8 && <small className="muted">…і ще {data.reminders.length - 8}</small>}
+      {data.reminders.length > 8 && (
+        <div className="row" style={{ marginTop: '.5rem' }}>
+          {remLimit < data.reminders.length ? (
+            <>
+              <button className="btn secondary small" onClick={() => setRemLimit(prev => prev + 10)}>
+                Показати ще ({Math.min(10, data.reminders.length - remLimit)} із {data.reminders.length - remLimit})
+              </button>
+              <button className="btn ghost small" onClick={() => setRemLimit(data.reminders.length)}>
+                Показати всі ({data.reminders.length})
+              </button>
+            </>
+          ) : (
+            <button className="btn ghost small" onClick={() => setRemLimit(8)}>Згорнути список</button>
+          )}
+        </div>
+      )}
     </Card>}
 
     <div className="stats">
@@ -44,36 +63,37 @@ export default function Dashboard() {
 
     <div className="grid g3">
       <Card title="Розподіл за статусами">
-        <div style={{ height: 230 }}>
+        <div style={{ height: narrow ? 195 : 230 }}>
           <ResponsiveContainer><PieChart>
-            <Pie data={pie} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={1}>
+            <Pie data={pie} stroke="var(--surface)" strokeWidth={2} dataKey="value" nameKey="name" innerRadius={narrow ? 42 : 55} outerRadius={narrow ? 72 : 90} paddingAngle={1}>
               {pie.map((x, i) => <Cell key={i} fill={x.color} />)}
-            </Pie><Tooltip />
+            </Pie><Tooltip contentStyle={CHART_TOOLTIP_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} />
           </PieChart></ResponsiveContainer>
         </div>
         <StatusLegend />
       </Card>
       <Card title="Виконання за розділами">
-        <div style={{ height: 250 }}>
-          <ResponsiveContainer><BarChart data={sections} layout="vertical" margin={{ left: 10 }}>
-            <XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="name" width={70} /><Tooltip />
+        <div style={{ height: narrow ? 215 : 250 }}>
+          <ResponsiveContainer><BarChart data={sections} layout="vertical" margin={{ left: 2, right: 6 }}>
+            <XAxis type="number" allowDecimals={false} fontSize={11} stroke={C.muted} /><YAxis type="category" dataKey="name" width={narrow ? 60 : 72} fontSize={11} stroke={C.muted} /><Tooltip contentStyle={CHART_TOOLTIP_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} cursor={{ fill: 'var(--surface-2)' }} />
             {Object.keys(STATUS).map(k => <RBar key={k} dataKey={STATUS[k].label} stackId="a" fill={STATUS[k].color} />)}
           </BarChart></ResponsiveContainer>
         </div>
       </Card>
       <Card title="Повнота звітування">
-        <p>Інформацію внесено: <b>{c.entered}</b> з {m.total} ({p.entered}%)</p>
+        <p style={{ marginBottom: '.35rem' }}>Інформацію внесено: <b>{c.entered}</b> з {m.total} ({p.entered}%)</p>
         <Bar value={p.entered} />
-        <p style={{ marginTop: '.8rem' }}>Погоджено координатором: <b>{c.approved}</b> ({p.approved}%)</p>
-        <Bar value={p.approved} color="#1f8a4c" />
-        <p style={{ marginTop: '.8rem' }}>Сигналів Risk Flags: <b>{data.flags.total}</b></p>
+        <p style={{ margin: '1rem 0 .35rem' }}>Погоджено координатором: <b>{c.approved}</b> ({p.approved}%)</p>
+        <Bar value={p.approved} color={C.ok} />
+        <p style={{ margin: '1rem 0 .4rem' }}>Сигналів Risk Flags: <b>{data.flags.total}</b></p>
         <div>{Object.entries(data.flags.by_code).map(([k, v]) =>
           <a key={k} href="#" onClick={e => { e.preventDefault(); go(`flag=${k}`) }} title={data.flags.catalog[k]}>
-            <span className="flag medium">{k}: {String(v)}</span></a>)}</div>
+            <span className="flag medium">{k}: {String(v)}</span></a>)}
+          {!Object.keys(data.flags.by_code).length && <span className="muted">Сигналів немає</span>}</div>
       </Card>
     </div>
 
-    <Card title="Стан корупційних ризиків" actions={<a className="btn secondary small" href="/program/risks" onClick={e => { e.preventDefault(); nav('/program/risks') }}>Детальніше</a>}>
+    <Card title="Стан корупційних ризиків" actions={<a className="btn secondary small" href="/program/risks" onClick={e => { e.preventDefault(); nav('/program/risks') }}>Детальніше <ArrowUpRight size={14} /></a>}>
       <p className="muted">Оцінюємо не кількість закритих заходів, а зміну індикатора стану ризику: скільки шляху пройдено від базового значення до цільового.</p>
       <div className="table-wrap"><table className="t"><thead><tr>
         <th>Ризик</th><th>Рівень</th><th>Індикатор</th><th style={{ width: 200 }}>Шлях до цілі</th><th>Заходи</th><th>Висновок</th>
@@ -82,7 +102,7 @@ export default function Dashboard() {
           <td><b>{r.code}</b> {r.name}</td>
           <td><Pill tone={RISK_TONE[r.level]}>{r.level}</Pill></td>
           <td><small>{num(r.baseline)} → <b>{num(r.current)}</b> (ціль {num(r.target)} {r.unit})</small></td>
-          <td>{r.progress === null ? '—' : <><Bar value={r.progress * 100} color={r.progress < .1 ? '#b3261e' : r.progress < .5 ? '#e3a812' : '#1f8a4c'} /><small>{Math.round(r.progress * 100)}%</small></>}</td>
+          <td>{r.progress === null ? '—' : <><Bar value={r.progress * 100} color={progressColor(r.progress)} /><small>{Math.round(r.progress * 100)}%</small></>}</td>
           <td>{r.measures_done}/{r.measures_total}</td>
           <td><Pill tone={r.verdict === 'зменшується' ? 'ok' : r.verdict === 'повільно зменшується' ? 'warn' : 'bad'}>{r.verdict}</Pill></td>
         </tr>)}
@@ -93,9 +113,10 @@ export default function Dashboard() {
       <p className="muted">Без рейтингування: підрозділи впорядковано за кодом. Колір — найвищий рівень ризику невиконання серед заходів підрозділу; натисніть, щоб відкрити заходи.</p>
       <div className="tiles">{data.by_unit.map((u: Any) => {
         const lvl = u.nonexecution['високий'] ? 'high' : u.nonexecution['середній'] ? 'medium' : 'low'
-        return <div key={u.code} className={`tile ${lvl}`} onClick={() => go(`unit=${u.code}`)}>
-          <b>{u.code}</b> <span className="n">{u.total} заход.</span>
-          <div style={{ fontSize: '.84rem', minHeight: '2.4em' }}>{u.name}</div>
+        return <div key={u.code} className={`tile ${lvl}`} role="button" tabIndex={0} onClick={() => go(`unit=${u.code}`)}
+          onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), go(`unit=${u.code}`))}>
+          <b>{u.code}</b> <span className="n">· {u.total} заход.</span>
+          <div className="clamp" style={{ fontSize: '.82rem', minHeight: '2.5em', margin: '.15rem 0 .45rem', color: 'var(--ink-2)' }}>{u.name}</div>
           <StatusStack counts={u.counts} total={u.total} />
           <div className="n" style={{ marginTop: '.3rem' }}>
             ризик невиконання: {u.nonexecution['високий'] || 0} вис. · {u.nonexecution['середній'] || 0} сер. · сигналів {u.flags}
@@ -104,26 +125,26 @@ export default function Dashboard() {
       })}</div>
     </Card>}
 
-    <div className="grid g2">
+    <div className="grid g2" style={{ alignItems: 'start' }}>
       <Card title="Критичні заходи">
-        <table className="t"><thead><tr><th>Захід</th><th>Статус</th><th>Сигнали</th><th>Ризик невик.</th></tr></thead><tbody>
+        <div className="table-wrap"><table className="t"><thead><tr><th>Захід</th><th>Статус</th><th>Сигнали</th><th>Ризик невик.</th></tr></thead><tbody>
           {data.critical.map((b: Any) => <tr key={b.code} className="click" onClick={() => nav(`/program/measures/${b.code}`)}>
             <td><b>{b.code}</b> <small className="muted">{b.unit.code}</small><div className="clamp"><small>{b.content}</small></div></td>
             <td><StatusPill s={b.status} /></td><td><Flags flags={b.flags} /></td>
             <td><Pill tone={RISK_TONE[b.nonexecution_risk.level]}>{b.nonexecution_risk.level} ({b.nonexecution_risk.score})</Pill></td>
           </tr>)}
-          {!data.critical.length && <tr><td colSpan={4} className="muted">Критичних заходів немає.</td></tr>}
-        </tbody></table>
+          {!data.critical.length && <tr><td colSpan={4}><Empty>Критичних заходів немає</Empty></td></tr>}
+        </tbody></table></div>
       </Card>
-      <Card title="Найближчі контрольні строки (120 днів)">
-        <table className="t"><thead><tr><th>Строк</th><th>Захід</th><th>Статус</th></tr></thead><tbody>
+      <Card title="Найближчі контрольні строки · 120 днів">
+        <div className="table-wrap"><table className="t"><thead><tr><th>Строк</th><th>Захід</th><th>Статус</th></tr></thead><tbody>
           {data.upcoming.map((b: Any) => <tr key={b.code} className="click" onClick={() => nav(`/program/measures/${b.code}`)}>
             <td>{fmtDate(b.current_deadline)}{b.postponed ? <><br /><Pill tone="warn">перенесено ×{b.postponed}</Pill></> : null}</td>
             <td><b>{b.code}</b> <small className="muted">{b.unit.code}</small><div className="clamp"><small>{b.content}</small></div></td>
             <td><StatusPill s={b.status} /></td>
           </tr>)}
-          {!data.upcoming.length && <tr><td colSpan={3} className="muted">Немає строків у найближчі 120 днів.</td></tr>}
-        </tbody></table>
+          {!data.upcoming.length && <tr><td colSpan={3}><Empty>У найближчі 120 днів строків немає</Empty></td></tr>}
+        </tbody></table></div>
       </Card>
     </div>
   </>

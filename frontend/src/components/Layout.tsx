@@ -1,95 +1,351 @@
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type ComponentType } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import {
+  ArrowLeft, BookOpen, CalendarClock, CalendarDays, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, FileText, Flag, History,
+  LayoutDashboard, Lightbulb, ListChecks, LogOut, Menu, MessageSquareText, Moon, PanelLeftClose, PanelLeftOpen,
+  Settings, ShieldAlert, Sun, Users, X,
+} from 'lucide-react'
 import { fmtDate } from '../api'
+import logoUrl from '../assets/hnuvs-logo.png'
 import { useAuth, type Role } from '../auth'
 
-export function Emblem({ size = 52 }: { size?: number }) {
-  return <svg className="logo" width={size} height={size} viewBox="0 0 64 64" aria-hidden>
-    <path d="M32 3 56 12v18c0 15-10 26-24 31C18 56 8 45 8 30V12z" fill="#0b2a5b" stroke="#e3a812" strokeWidth="3" />
-    <path d="M21 33l7 7 15-16" fill="none" stroke="#e3a812" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+export function Emblem({ size = 48, className = '' }: { size?: number; className?: string }) {
+  const [src, setSrc] = useState<string>(logoUrl)
+  return (
+    <img
+      className={`logo ${className}`.trim()}
+      src={src}
+      width={size}
+      height={size}
+      alt="Емблема ХНУВС"
+      decoding="async"
+      draggable={false}
+      onError={() => { if (src !== '/hnuvs-logo.png') setSrc('/hnuvs-logo.png') }}
+      style={{ width: size, height: size }}
+    />
+  )
 }
 
-type Item = [string, string, Role[]]
+export function useTheme() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('akp_theme')
+      if (saved === 'dark' || saved === 'light') return saved
+    } catch { /* ignore */ }
+    return 'light'
+  })
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+      root.classList.remove('light')
+    } else {
+      root.classList.add('light')
+      root.classList.remove('dark')
+    }
+    try { localStorage.setItem('akp_theme', theme) } catch { /* ignore */ }
+  }, [theme])
+
+  const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'))
+  return { theme, toggleTheme }
+}
+
+type Icon = ComponentType<{ size?: number; strokeWidth?: number }>
+type Item = [string, string, Role[], Icon]
 const ALL: Role[] = ['KOORD', 'ADMIN', 'KER', 'VYK', 'ANAL']
 const VIEW: Role[] = ['KOORD', 'ADMIN', 'KER', 'ANAL']
 
-const MAIN: Item[] = [
-  ['/surveys', 'Опитування', ['KOORD']],
-  ['/my', 'Мої заходи', ['VYK']],
-  ['/program', 'Виконання антикорупційної програми', VIEW],
-  ['/admin', 'Технічне адміністрування', ['ADMIN']],
+const GROUPS: { label: string; items: Item[] }[] = [
+  { label: 'Мій кабінет', items: [
+    ['/my', 'Мої заходи', ['VYK'], ClipboardList],
+    ['/my/calendar', 'Строки і нагадування', ['VYK'], CalendarClock],
+  ] },
+  { label: 'Антикорупційна програма', items: [
+    ['/program/dashboard', 'Моніторинг', VIEW, LayoutDashboard],
+    ['/program/measures', 'Реєстр заходів', VIEW, ListChecks],
+    ['/program/approvals', 'Погодження', ['KOORD'], ClipboardCheck],
+    ['/program/flags', 'Сигнали (Risk Flags)', VIEW, Flag],
+    ['/program/risks', 'Корупційні ризики', VIEW, ShieldAlert],
+    ['/program/recommendations', 'Рекомендації', VIEW, Lightbulb],
+    ['/program/calendar', 'Календар строків', VIEW, CalendarDays],
+    ['/program/reports', 'Звіти', VIEW, FileText],
+    ['/program/audit', 'Журнал дій', VIEW, History],
+    ['/program/passport', 'Паспорт програми', VIEW, BookOpen],
+  ] },
+  { label: 'Дослідження', items: [
+    ['/surveys', 'Опитування', ['KOORD'], MessageSquareText],
+  ] },
+  { label: 'Адміністрування', items: [
+    ['/admin/users', 'Користувачі', ['ADMIN'], Users],
+    ['/admin/periods', 'Звітні вікна', ['ADMIN'], CalendarClock],
+    ['/admin/system', 'Налаштування і стан системи', ['ADMIN'], Settings],
+  ] },
 ]
 
-const PROGRAM_SUB: Item[] = [
-  ['/program/dashboard', 'Моніторинг', VIEW],
-  ['/program/measures', 'Реєстр заходів', VIEW],
-  ['/program/approvals', 'Погодження', ['KOORD']],
-  ['/program/flags', 'Сигнали (Risk Flags)', VIEW],
-  ['/program/risks', 'Корупційні ризики', VIEW],
-  ['/program/recommendations', 'Рекомендації', VIEW],
-  ['/program/calendar', 'Календар строків', VIEW],
-  ['/program/reports', 'Звіти', VIEW],
-  ['/program/audit', 'Журнал дій', VIEW],
-  ['/program/passport', 'Паспорт програми', VIEW],
-]
-const MY_SUB: Item[] = [
-  ['/my', 'Мої заходи', ['VYK']],
-  ['/my/calendar', 'Строки і нагадування', ['VYK']],
-]
-const ADMIN_SUB: Item[] = [
-  ['/admin/users', 'Користувачі', ['ADMIN']],
-  ['/admin/periods', 'Звітні вікна', ['ADMIN']],
-  ['/admin/system', 'Налаштування і стан системи', ['ADMIN']],
-]
+const CABINET: Record<Role, string> = {
+  KOORD: 'Кабінет уповноваженого', VYK: 'Кабінет виконавця', ADMIN: 'Кабінет техадміністратора',
+  KER: 'Кабінет керівника', ANAL: 'Кабінет аналітика',
+}
+
+function resolveLabel(pathname: string): string {
+  if (pathname.startsWith('/program/measures/') && pathname !== '/program/measures') {
+    return `Захід ${pathname.split('/').pop()}`
+  }
+  const found = GROUPS.flatMap(g => g.items)
+    .filter(i => pathname.startsWith(i[0]))
+    .sort((a, b) => b[0].length - a[0].length)[0]
+  return found ? found[1] : 'Моніторинг'
+}
 
 export default function Layout() {
   const { profile, today, periods, period, setPeriod, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const loc = useLocation()
   const nav = useNavigate()
+  const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [trail, setTrail] = useState<{ path: string; label: string }[]>([])
+
   if (!profile) return null
   const role = profile.role
-  const sub = loc.pathname.startsWith('/program') ? PROGRAM_SUB : loc.pathname.startsWith('/my') ? MY_SUB
-    : loc.pathname.startsWith('/admin') ? ADMIN_SUB : []
   const cur = periods.find(p => p.code === period)
-  const cabinet = role === 'KOORD' ? 'Кабінет уповноваженого' : role === 'VYK' ? 'Кабінет виконавця'
-    : role === 'ADMIN' ? 'Кабінет технічного адміністратора' : role === 'KER' ? 'Кабінет керівника' : 'Кабінет аналітика'
+  const groups = GROUPS.map(g => ({ ...g, items: g.items.filter(i => i[2].includes(role)) })).filter(g => g.items.length)
+  const current = GROUPS.flatMap(g => g.items).filter(i => loc.pathname.startsWith(i[0])).sort((a, b) => b[0].length - a[0].length)[0]
+  const activeGroup = groups.find(g => current && g.items.includes(current))
+  const section = activeGroup?.label
+  const sectionDefaultPath = activeGroup?.items[0]?.[0] || (role === 'VYK' ? '/my' : role === 'ADMIN' ? '/admin/users' : '/program/dashboard')
+  const isDetailMeasure = loc.pathname.startsWith('/program/measures/') && loc.pathname !== '/program/measures'
+  const detailCode = isDetailMeasure ? loc.pathname.split('/').pop() : null
+  const currentLabel = isDetailMeasure ? (detailCode || '') : (current?.[1] || 'АКП-Монітор')
+  const initials = (profile.unit?.code || profile.role).slice(0, 3)
+  const showSidebarLabels = !collapsed || open
 
-  return <>
-    <div className="topbar"><div className="wrap">
-      <span>Умовне відомство сектору безпеки і оборони · <b>синтетичні дані</b></span>
-      <span>Робоча дата: <b>{fmtDate(today)}</b>{cur && <> · вікно внесення {cur.code}: {fmtDate(cur.window_start)}–{fmtDate(cur.window_end)} <b>{cur.is_open ? 'відкрите' : 'закрите'}</b></>}</span>
-    </div></div>
-    <header className="brand"><div className="wrap">
-      <Emblem />
-      <div className="title">
-        <strong>АКП-Монітор</strong>
-        <span>{cabinet} · цифрова система моніторингу виконання антикорупційної програми</span>
+  useEffect(() => {
+    setOpen(false)
+    setUserMenuOpen(false)
+    const curPath = loc.pathname
+    const curLbl = resolveLabel(curPath)
+    if (curPath === sectionDefaultPath) {
+      setTrail([{ path: curPath, label: curLbl }])
+      return
+    }
+    setTrail(prev => {
+      const idx = prev.findIndex(item => item.path === curPath || item.label === curLbl)
+      if (idx !== -1) {
+        return prev.slice(0, idx + 1)
+      }
+      const base = prev.length ? prev : [{ path: sectionDefaultPath, label: resolveLabel(sectionDefaultPath) }]
+      return [...base, { path: curPath, label: curLbl }]
+    })
+  }, [loc.pathname, sectionDefaultPath])
+
+  useEffect(() => {
+    if (!open && !userMenuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        setUserMenuOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    if (open) document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+    }
+  }, [open, userMenuOpen])
+
+  const prevSteps = trail.slice(0, -1).filter(s => s.label !== currentLabel)
+  const canGoBack = prevSteps.length > 0 || loc.pathname !== sectionDefaultPath
+
+  const handleStepBack = () => {
+    if (prevSteps.length > 0) {
+      const target = prevSteps[prevSteps.length - 1]
+      setTrail(prev => prev.slice(0, -1))
+      nav(target.path)
+    } else if (loc.pathname !== sectionDefaultPath) {
+      setTrail([{ path: sectionDefaultPath, label: resolveLabel(sectionDefaultPath) }])
+      nav(sectionDefaultPath)
+    }
+  }
+
+  const handleJumpToStep = (targetPath: string, index: number) => {
+    setTrail(prev => prev.slice(0, index + 1))
+    nav(targetPath)
+  }
+
+  const handleLogout = async () => {
+    setUserMenuOpen(false)
+    setOpen(false)
+    await logout()
+    nav('/login')
+  }
+
+  return <div className={`app ${open ? 'nav-open' : ''} ${collapsed ? 'sb-collapsed' : ''}`}>
+    <aside className="sidebar" aria-label="Навігація">
+      <div className="sb-brand">
+        <Link to="/" className="sb-logo-link" title="На головну" onClick={() => setOpen(false)}>
+          <Emblem size={38} />
+        </Link>
+        {showSidebarLabels && <div className="sb-brand-text"><strong>АКП-Монітор</strong><span>{CABINET[role]}</span></div>}
+        <button
+          type="button"
+          className="btn ghost small icon sb-toggle-desktop"
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? 'Розгорнути бокову панель' : 'Згорнути бокову панель'}
+          aria-label={collapsed ? 'Розгорнути бокову панель' : 'Згорнути бокову панель'}
+        >
+          {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+        </button>
+        <button type="button" className="btn ghost small icon sb-close" onClick={() => setOpen(false)} aria-label="Закрити меню"><X size={18} /></button>
       </div>
-      <div className="userbox">
-        <label className="muted" style={{ fontSize: '.8rem' }}>Період&nbsp;
-          <select value={period} onChange={e => setPeriod(e.target.value)}>
-            {periods.map(p => <option key={p.code} value={p.code}>{p.code.replace('-Q', ' · ')} кв.</option>)}
-          </select>
-        </label>
-        <span className="role-chip" title={profile.position}>{profile.role_name}{profile.unit ? ` · ${profile.unit.code}` : ''}</span>
-        <button className="btn secondary small" onClick={() => { logout(); nav('/login') }}>Вийти</button>
+      <div className="sb-scroll">
+        {groups.map(g => <div className="sb-group" key={g.label}>
+          {showSidebarLabels && <div className="sb-label">{g.label}</div>}
+          {g.items.map(([to, label, , Ico]) =>
+            <NavLink key={to} to={to} end={to === '/my'} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `sb-link ${isActive ? 'active' : ''}`}>
+              <Ico size={18} strokeWidth={1.75} />{showSidebarLabels && <span>{label}</span>}
+            </NavLink>)}
+        </div>)}
       </div>
-    </div></header>
-    <nav className="mainnav"><div className="wrap">
-      {MAIN.filter(i => i[2].includes(role)).map(([to, label]) =>
-        <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''}>{label}</NavLink>)}
-    </div></nav>
-    {sub.length > 1 && <nav className="subnav"><div className="wrap">
-      {sub.filter(i => i[2].includes(role)).map(([to, label]) =>
-        <NavLink key={to} to={to} end className={({ isActive }) => isActive ? 'active' : ''}>{label}</NavLink>)}
-    </div></nav>}
-    <main className="wrap"><Outlet /></main>
-    <footer><div className="wrap">
-      АКП-Монітор · прототип для IV Хакатону з питань виховання доброчесності та запобігання корупції (BITEC, 2026).
-      Усі дані синтетичні; персональних даних, службової інформації та інформації з обмеженим доступом система не містить.
-      Висновки формуються за явними правилами (<code>rules.yaml</code>), рішення ухвалює посадова особа. API: <a href="/api/docs/">/api/docs/</a>
-    </div></footer>
-  </>
+    </aside>
+    <div className="scrim" onClick={() => setOpen(false)} aria-hidden />
+
+    <div className="content">
+      <header className="header">
+        <button type="button" className="btn ghost icon menu-btn" onClick={() => setOpen(true)} aria-label="Відкрити меню"><Menu size={19} /></button>
+        {collapsed && (
+          <button type="button" className="btn ghost small icon hide-sm" onClick={() => setCollapsed(false)} title="Розгорнути панель">
+            <PanelLeftOpen size={18} />
+          </button>
+        )}
+        <nav className="crumbs" aria-label="Навігаційний шлях">
+          {canGoBack && (
+            <button type="button" className="crumb-back-btn" onClick={handleStepBack} title="Повернутися на попередню сторінку">
+              <ArrowLeft size={15} />
+              <span className="crumb-back-text">Назад</span>
+            </button>
+          )}
+          {section && (
+            <>
+              {canGoBack ? (
+                <button
+                  type="button"
+                  onClick={() => { setTrail([{ path: sectionDefaultPath, label: resolveLabel(sectionDefaultPath) }]); nav(sectionDefaultPath) }}
+                  className="crumb-link hide-sm"
+                  title={`Повернутися у початок розділу «${section}»`}
+                >
+                  {section}
+                </button>
+              ) : (
+                <span className="hide-sm">{section}</span>
+              )}
+              <ChevronRight size={15} className="hide-sm" />
+            </>
+          )}
+          {prevSteps.map((step, idx) => (
+            <span key={step.path} className="hide-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem' }}>
+              <button
+                type="button"
+                onClick={() => handleJumpToStep(step.path, idx)}
+                className="crumb-link"
+                title={`Повернутися до «${step.label}»`}
+              >
+                {step.label}
+              </button>
+              <ChevronRight size={15} className="hide-sm" />
+            </span>
+          ))}
+          <b className="crumb-current-title">{currentLabel}</b>
+        </nav>
+        <div className="tools">
+          {cur && <span className={`chip hide-sm ${cur.is_open ? 'open' : 'closed'}`}
+            title={`Вікно внесення ${cur.code}: ${fmtDate(cur.window_start)}–${fmtDate(cur.window_end)}`}>
+            <i className="dot" />Вікно {cur.is_open ? 'відкрите' : 'закрите'}
+          </span>}
+          {today && <span className="chip hide-sm" title="Робоча дата системи">{fmtDate(today)}</span>}
+          <label className="select-wrap" title="Звітний період">
+            <CalendarDays size={15} />
+            <select value={period} onChange={e => setPeriod(e.target.value)} aria-label="Звітний період">
+              {periods.map(p => <option key={p.code} value={p.code}>{p.code.replace('-Q', ' · ')} кв.</option>)}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn secondary small icon hide-xs"
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Увімкнути темну тему' : 'Увімкнути світлу тему'}
+            aria-label="Перемкнути тему"
+          >
+            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+          <div className="header-user-wrap">
+            <button
+              type="button"
+              className="header-account-btn"
+              onClick={() => setUserMenuOpen(v => !v)}
+              title={`${CABINET[role]} · ${profile.code}`}
+              aria-label="Обліковий запис"
+              aria-expanded={userMenuOpen}
+            >
+              <span className="avatar">{initials}</span>
+              <span className="header-account-name hide-sm">{profile.code}</span>
+              <ChevronDown size={14} className="header-account-caret hide-sm" />
+            </button>
+            {userMenuOpen && (
+              <>
+                <div className="user-pop-scrim" onClick={() => setUserMenuOpen(false)} aria-hidden />
+                <div className="user-popover" role="dialog" aria-label="Профіль користувача">
+                  <div className="user-popover-head">
+                    <div className="avatar">{initials}</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <b>{CABINET[role]} · {profile.code}</b>
+                      {profile.unit && <small>{profile.unit.code} · {profile.unit.name}</small>}
+                      {profile.position && <small>{profile.position}</small>}
+                    </div>
+                  </div>
+                  {(cur || today) && (
+                    <div className="user-popover-meta show-sm">
+                      {cur && (
+                        <div className="meta-line">
+                          <span className="muted">Вікно {cur.code}:</span>
+                          <span className={`pill ${cur.is_open ? 'ok' : 'grey'}`}>
+                            {cur.is_open ? 'відкрите' : 'закрите'} ({fmtDate(cur.window_start)}–{fmtDate(cur.window_end)})
+                          </span>
+                        </div>
+                      )}
+                      {today && (
+                        <div className="meta-line">
+                          <span className="muted">Робоча дата:</span>
+                          <b>{fmtDate(today)}</b>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="user-popover-actions">
+                    <button type="button" className="btn secondary small show-xs" style={{ width: '100%', marginBottom: '.5rem' }} onClick={toggleTheme}>
+                      {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+                      <span>{theme === 'light' ? 'Темна тема' : 'Світла тема'}</span>
+                    </button>
+                    <button type="button" className="btn danger small" style={{ width: '100%' }} onClick={handleLogout}>
+                      <LogOut size={15} />
+                      <span>Вийти з акаунту</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+      <main className="page"><Outlet /></main>
+      <footer><div className="wrap">
+        © {new Date().getFullYear()} Харківський національний університет внутрішніх справ (ХНУВС) · АКП-Монітор. Усі права захищені.
+      </div></footer>
+    </div>
+  </div>
 }
 
 export { ALL }

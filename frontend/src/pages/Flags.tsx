@@ -16,12 +16,12 @@ export default function FlagsPage() {
       const items = data.items.filter((f: Any) => f.code === c.code)
       return <Card key={c.code} title={<>{c.code} · {c.title} <small className="muted">({items.length})</small></>}>
         <p><small className="muted">Правило: {c.rule}</small></p>
-        {items.length ? <table className="t"><tbody>{items.map((f: Any, i: number) =>
+        {items.length ? <div className="table-wrap"><table className="t"><tbody>{items.map((f: Any, i: number) =>
           <tr key={i} className={f.object === 'zakhid' ? 'click' : ''} onClick={() => f.object === 'zakhid' && nav(`/program/measures/${f.id}`)}>
             <td style={{ width: 110 }}><b>{f.id}</b><br /><small className="muted">{f.object === 'zakhid' ? 'захід' : f.object === 'pidrozdil' ? 'підрозділ' : 'ризик'}</small></td>
             <td>{f.explanation}{f.measure_content && <div className="clamp"><small className="muted">{f.measure_content}</small></div>}</td>
             <td style={{ width: 70 }}><small>{f.unit}</small></td>
-          </tr>)}</tbody></table> : <p className="muted">Сигналів немає.</p>}
+          </tr>)}</tbody></table></div> : <p className="muted">Сигналів немає.</p>}
       </Card>
     })}
   </>

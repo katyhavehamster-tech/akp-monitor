@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fmtDate, num, type Any } from '../api'
 import { useAuth } from '../auth'
-import { Bar, Card, ErrorBox, Loading, Pill, RISK_TONE, useApi } from '../components/ui'
+import { Bar, C, Card, CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, ErrorBox, Loading, Pill, progressColor, RISK_TONE, useApi } from '../components/ui'
 
 export default function Risks() {
   const { period } = useAuth()
@@ -19,10 +19,11 @@ export default function Risks() {
       <p style={{ marginTop: '.5rem' }}>{r.indicator} ({r.direction === 'менше' ? 'має зменшуватися' : 'має зростати'})</p>
       <div className="row"><small>Базове {num(r.baseline)} → зараз <b>{num(r.current)}</b> → ціль {num(r.target)} {r.unit}</small><span className="spacer" />
         <small>{r.progress === null ? '—' : `${Math.round(r.progress * 100)}% шляху`}</small></div>
-      {r.progress !== null && <Bar value={r.progress * 100} color={r.progress < .1 ? '#b3261e' : r.progress < .5 ? '#e3a812' : '#1f8a4c'} />}
+      {r.progress !== null && <Bar value={r.progress * 100} color={progressColor(r.progress)} />}
       <div style={{ height: 140, marginTop: '.5rem' }}><ResponsiveContainer><LineChart data={r.history.map((h: Any) => ({ ...h, date: fmtDate(h.date) }))}>
-        <CartesianGrid stroke="#eef0f4" /><XAxis dataKey="date" fontSize={11} /><YAxis fontSize={11} domain={['auto', 'auto']} /><Tooltip />
-        <ReferenceLine y={r.target} stroke="#1f8a4c" strokeDasharray="4 4" /><Line dataKey="value" stroke="#123a78" strokeWidth={2} />
+        <CartesianGrid stroke={C.grid} /><XAxis dataKey="date" fontSize={11} stroke={C.muted} /><YAxis fontSize={11} stroke={C.muted} domain={['auto', 'auto']} />
+        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} />
+        <ReferenceLine y={r.target} stroke={C.ok} strokeDasharray="4 4" /><Line dataKey="value" stroke="#3b4fd8" strokeWidth={2} />
       </LineChart></ResponsiveContainer></div>
       <small>Заходи: {r.measures.length ? r.measures.map((c: string) => <Link key={c} to={`/program/measures/${c}`} style={{ marginRight: '.4rem' }}>{c}</Link>) : <b style={{ color: 'var(--bad)' }}>немає жодного заходу</b>}
         {' '}· виконано {r.measures_done}/{r.measures_total} · власник {r.owner_unit}</small>
