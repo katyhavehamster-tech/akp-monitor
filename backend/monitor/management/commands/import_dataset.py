@@ -22,6 +22,9 @@ from monitor.models import (AuditLog, DeadlineChange, Evidence, Execution, Measu
 
 DATA = Path(settings.BASE_DIR) / "data" / "dataset" / "dani"
 DEMO_PASSWORD = "demo"
+DEMO_SIGNATORY = "Олександр КОВАЛЕНКО"
+DEMO_HEAD_SIGNATORY = "Валерій СОКОЛОВ"
+
 
 
 def rows(name):
@@ -74,8 +77,10 @@ class Command(BaseCommand):
             u = User.objects.create_user(username=r["id"].lower(), password=DEMO_PASSWORD,
                                          is_staff=r["rol"] == "ADMIN", is_superuser=r["rol"] == "ADMIN")
             Token.objects.create(user=u)
-            profiles[r["id"]] = Profile.objects.create(user=u, code=r["id"], role=r["rol"],
-                                                       unit=units.get(r["pidrozdil_id"]), position=r["posada"])
+            profiles[r["id"]] = Profile.objects.create(
+                user=u, code=r["id"], full_name="", role=r["rol"],
+                unit=units.get(r["pidrozdil_id"]), position=r["posada"],
+            )
 
         risks = {}
         for r in rows("ryzyky"):
@@ -105,6 +110,8 @@ class Command(BaseCommand):
 
         s = SystemSettings.get()
         s.today_override = date(2026, 7, 3)  # демо-дата: відкрите вікно внесення за ІІ квартал
+        s.signatory_name = DEMO_SIGNATORY
+        s.head_signatory_name = DEMO_HEAD_SIGNATORY
         s.save()
         periods = {}
         for y in range(program.period_start.year, program.period_end.year + 1):

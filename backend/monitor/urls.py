@@ -4,6 +4,7 @@ from . import views as v
 
 urlpatterns = [
     path("auth/login", v.login),
+    path("auth/logout", v.logout),
     path("auth/demo-users", v.demo_users),
     path("auth/me", v.me),
     path("program", v.program),
@@ -21,6 +22,7 @@ urlpatterns = [
     path("measures/<str:code>/comments", v.comment_add),
     path("measures/<str:code>/deadline", v.deadline_change),
     path("evidence/<str:code>/verify", v.evidence_verify),
+    path("evidence/<str:code>/file", v.evidence_file),
     path("dashboard", v.dashboard),
     path("flags", v.flags),
     path("risks", v.risks),

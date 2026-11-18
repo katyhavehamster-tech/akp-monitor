@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import date, timedelta
 from datetime import timezone as dt_timezone
+from pathlib import Path
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -50,6 +52,7 @@ class Unit(models.Model):
 class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
     code = models.CharField("Код користувача", max_length=10, unique=True)
+    full_name = models.CharField("Власне імʼя ПРІЗВИЩЕ (ПІБ)", max_length=200, blank=True, default="")
     role = models.CharField(max_length=10, choices=Role.choices)
     unit = models.ForeignKey(Unit, null=True, blank=True, on_delete=models.SET_NULL)
     position = models.CharField("Посада", max_length=300)
@@ -272,7 +275,9 @@ class Execution(models.Model):
 
 
 def evidence_path(instance, filename):
-    return f"evidence/{instance.measure.code}/{timezone.now():%Y%m%d%H%M%S}_{filename}"
+    base = Path(str(filename or "document")).name
+    safe = re.sub(r"[^\w.\-а-яА-ЯіїєґІЇЄҐ]", "_", base)[:80] or "document"
+    return f"evidence/{instance.measure.code}/{timezone.now():%Y%m%d%H%M%S}_{safe}"
 
 
 class Evidence(models.Model):
@@ -316,13 +321,23 @@ class Comment(models.Model):
     """Коментар або зауваження координатора до заходу."""
     measure = models.ForeignKey(Measure, on_delete=models.CASCADE, related_name="comments")
     period = models.ForeignKey(ReportingPeriod, null=True, blank=True, on_delete=models.SET_NULL)
-    author = models.ForeignKey(Profile, on_delete=models.PROTECT)
+    author = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL)
+    author_code = models.CharField(max_length=20, blank=True, default="")
+    author_role_name = models.CharField(max_length=100, blank=True, default="")
     text = models.TextField()
     is_remark = models.BooleanField("Зауваження координатора", default=False)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if self.author_id and self.author:
+            if not self.author_code:
+                self.author_code = self.author.code
+            if not self.author_role_name:
+                self.author_role_name = self.author.get_role_display()
+        super().save(*args, **kwargs)
 
 
 class Recommendation(models.Model):
@@ -375,11 +390,33 @@ class SystemSettings(models.Model):
     window_days = models.PositiveSmallIntegerField("Тривалість вікна внесення, днів", default=5)
     reminder_days = models.PositiveSmallIntegerField("Нагадувати за, днів", default=14)
     min_survey_group = models.PositiveSmallIntegerField("Мінімальна кількість відповідей для показу", default=5)
+    signatory_name = models.CharField("Власне імʼя ПРІЗВИЩЕ уповноваженої особи (для Word-звітів)", max_length=200, default="Олександр КОВАЛЕНКО", blank=True)
+    head_signatory_name = models.CharField("Власне імʼя ПРІЗВИЩЕ керівника органу (для Word-звітів)", max_length=200, default="Валерій СОКОЛОВ", blank=True)
 
     @classmethod
     def get(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
+        changed = False
+        if not obj.signatory_name or obj.signatory_name.strip() == "Власне імʼя ПРІЗВИЩЕ":
+            obj.signatory_name = "Олександр КОВАЛЕНКО"
+            changed = True
+        if not obj.head_signatory_name or obj.head_signatory_name.strip() == "Власне імʼя ПРІЗВИЩЕ":
+            obj.head_signatory_name = "Валерій СОКОЛОВ"
+            changed = True
+        if changed:
+            obj.save()
         return obj
+
+    @classmethod
+    def signatories(cls) -> tuple[str, str]:
+        s = cls.get()
+        sig1 = (s.signatory_name or "").strip()
+        if not sig1 or sig1 == "Власне імʼя ПРІЗВИЩЕ":
+            sig1 = "Олександр КОВАЛЕНКО"
+        sig2 = (s.head_signatory_name or "").strip()
+        if not sig2 or sig2 == "Власне імʼя ПРІЗВИЩЕ":
+            sig2 = "Валерій СОКОЛОВ"
+        return sig1, sig2
 
     @classmethod
     def today(cls) -> date:
@@ -392,6 +429,7 @@ class AuditLog(models.Model):
     тож непомітно змінити чи видалити запис неможливо — перевірка покаже розрив."""
     ts = models.DateTimeField()
     actor = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL)
+    actor_code = models.CharField(max_length=20, blank=True, default="")
     action = models.CharField(max_length=200)
     obj_type = models.CharField(max_length=30)
     obj_id = models.CharField(max_length=30)
@@ -404,9 +442,15 @@ class AuditLog(models.Model):
     class Meta:
         ordering = ["id"]
 
+    @property
+    def resolved_actor_code(self) -> str:
+        if self.actor_code:
+            return self.actor_code
+        return self.actor.code if self.actor_id and self.actor else ""
+
     def payload(self):
         return json.dumps({
-            "ts": self.ts.astimezone(dt_timezone.utc).isoformat(), "actor": self.actor.code if self.actor else "",
+            "ts": self.ts.astimezone(dt_timezone.utc).isoformat(), "actor": self.resolved_actor_code,
             "action": self.action, "obj_type": self.obj_type, "obj_id": self.obj_id,
             "field": self.field, "old": self.old_value, "new": self.new_value, "prev": self.prev_hash,
         }, ensure_ascii=False, sort_keys=True)
@@ -416,11 +460,15 @@ class AuditLog(models.Model):
             raise ValidationError("Запис журналу незмінний.")
         super().save(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Запис журналу не можна видалити.")
+
     @classmethod
-    def write(cls, actor, action, obj_type, obj_id, field="", old="", new="", ts=None):
+    def write(cls, actor, action, obj_type, obj_id, field="", old="", new="", ts=None, actor_code=""):
+        code_val = actor.code if actor else (actor_code or "")
         with transaction.atomic():
             last = cls.objects.select_for_update().order_by("-id").first()
-            rec = cls(ts=ts or timezone.now(), actor=actor, action=action, obj_type=obj_type,
+            rec = cls(ts=ts or timezone.now(), actor=actor, actor_code=code_val, action=action, obj_type=obj_type,
                       obj_id=str(obj_id), field=field, old_value="" if old is None else str(old),
                       new_value="" if new is None else str(new), prev_hash=last.hash if last else "0" * 64)
             rec.hash = hashlib.sha256(rec.payload().encode("utf-8")).hexdigest()
@@ -431,7 +479,7 @@ class AuditLog(models.Model):
     def verify_chain(cls):
         prev = "0" * 64
         n = 0
-        for rec in cls.objects.order_by("id").iterator():
+        for rec in cls.objects.select_related("actor").order_by("id").iterator():
             if rec.prev_hash != prev or hashlib.sha256(rec.payload().encode("utf-8")).hexdigest() != rec.hash:
                 return {"ok": False, "checked": n, "broken_at": rec.id}
             prev = rec.hash

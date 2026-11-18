@@ -4,13 +4,19 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import re
 from collections import Counter
 from datetime import date, timedelta
+from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import URLValidator
 from django.db import transaction
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from openpyxl import Workbook
@@ -32,6 +38,77 @@ from .surveys import compare as compare_surveys
 from .surveys import group_options, parse_csv
 
 STATUS_NAMES = dict(Execution.Status.choices)
+ALLOWED_EVIDENCE_EXTS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".rtf",
+    ".odt", ".ods", ".png", ".jpg", ".jpeg", ".webp", ".zip", ".p7s", ".sig",
+}
+MAX_EVIDENCE_BYTES = 15 * 1024 * 1024
+LOGIN_WINDOW_SEC = 300
+LOGIN_MAX_USER_FAILS = 10
+LOGIN_MAX_IP_FAILS = 25
+_HTTP_URL_VALIDATOR = URLValidator(schemes=["http", "https"])
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+_PURE_NUM_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?$")
+
+
+def _parse_date(val, field="date", allow_empty=False) -> date | None:
+    if val in (None, ""):
+        if allow_empty:
+            return None
+        raise ValidationError({field: "Вкажіть коректну дату у форматі РРРР-ММ-ДД."})
+    try:
+        return date.fromisoformat(str(val).strip())
+    except (ValueError, TypeError):
+        raise ValidationError({field: "Невірний формат дати (очікується РРРР-ММ-ДД)."})
+
+
+def _parse_float(val, field="value") -> float | None:
+    if val in (None, ""):
+        return None
+    try:
+        res = float(val)
+    except (ValueError, TypeError):
+        raise ValidationError({field: "Вкажіть числове значення."})
+    if res != res or res in (float("inf"), float("-inf")):
+        raise ValidationError({field: "Недопустиме числове значення."})
+    return res
+
+
+def _parse_int(val, field="value", min_val: int | None = None, max_val: int | None = None) -> int:
+    try:
+        res = int(val)
+    except (ValueError, TypeError):
+        raise ValidationError({field: "Вкажіть ціле число."})
+    if min_val is not None and res < min_val:
+        raise ValidationError({field: f"Значення має бути не менше {min_val}."})
+    if max_val is not None and res > max_val:
+        raise ValidationError({field: f"Значення має бути не більше {max_val}."})
+    return res
+
+
+def _validate_http_url(raw: str | None, field="link") -> str:
+    val = (raw or "").strip()
+    if not val:
+        return ""
+    try:
+        _HTTP_URL_VALIDATOR(val)
+    except DjangoValidationError:
+        raise ValidationError({field: "Посилання має починатися з https:// або http://."})
+    return val
+
+
+def _sanitize_export_cell(v):
+    """Захист CSV/XLSX від інʼєкцій формул (OWASP CWE-1236)."""
+    if isinstance(v, str) and v and v.startswith(_FORMULA_PREFIXES) and not _PURE_NUM_RE.match(v):
+        return "'" + v
+    return v
+
+
+def _client_ip(request) -> str:
+    xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if xff:
+        return xff.split(",")[0].strip()[:64]
+    return (request.META.get("REMOTE_ADDR") or "unknown")[:64]
 
 
 # ---------------------------------------------------------------- допоміжне
@@ -79,8 +156,10 @@ def execution_dict(e: Execution | None):
 
 
 def evidence_dict(e: Evidence):
+    fname = Path(e.file.name).name if e.file else None
     return {"id": e.id, "code": e.code, "type": e.type, "title": e.title, "doc_date": e.doc_date,
-            "link": e.link, "file": e.file.url if e.file else None, "uploaded_at": e.uploaded_at,
+            "link": e.link, "file": f"/api/evidence/{e.code}/file" if e.file else None,
+            "filename": fname, "uploaded_at": e.uploaded_at,
             "uploaded_by": e.uploaded_by.code if e.uploaded_by else None, "sha256": e.sha256,
             "period": e.period.code if e.period else None}
 
@@ -131,21 +210,55 @@ def _context(period, p):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login(request):
-    u = authenticate(username=(request.data.get("username") or "").strip().lower(),
-                     password=request.data.get("password") or "")
+    username = (request.data.get("username") or "").strip().lower()[:64]
+    password = request.data.get("password") or ""
+    ip = _client_ip(request)
+    user_key = f"login_fail:u:{ip}:{username}"
+    ip_key = f"login_fail:ip:{ip}"
+    if cache.get(user_key, 0) >= LOGIN_MAX_USER_FAILS or cache.get(ip_key, 0) >= LOGIN_MAX_IP_FAILS:
+        return Response(
+            {"detail": "Забагато невдалих спроб входу. Зачекайте кілька хвилин і спробуйте знову."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    u = authenticate(username=username, password=password)
     if not u or not hasattr(u, "profile"):
+        cache.set(user_key, cache.get(user_key, 0) + 1, LOGIN_WINDOW_SEC)
+        cache.set(ip_key, cache.get(ip_key, 0) + 1, LOGIN_WINDOW_SEC)
+        AuditLog.write(None, "невдала спроба входу", "korystuvach", (username or "unknown")[:30])
         return Response({"detail": "Невірний логін або пароль."}, status=400)
+    cache.delete(user_key)
     token, _ = Token.objects.get_or_create(user=u)
     AuditLog.write(u.profile, "вхід у систему", "korystuvach", u.profile.code)
     return Response({"token": token.key, "profile": profile_dict(u.profile)})
+
+
+@api_view(["POST"])
+def logout(request):
+    p = getattr(request.user, "profile", None)
+    Token.objects.filter(user=request.user).delete()
+    if p:
+        AuditLog.write(p, "вихід із системи", "korystuvach", p.code)
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def demo_users(request):
     """Список демо-облікових записів для сторінки входу (лише синтетичні ролі, без імен)."""
-    return Response([profile_dict(p) for p in Profile.objects.select_related("unit", "user").order_by("code")
-                     if p.user.is_active])
+    if not getattr(settings, "AKP_DEMO_MODE", True):
+        return Response([])
+    return Response([
+        {
+            "code": p.code,
+            "username": p.user.username,
+            "role": p.role,
+            "role_name": p.get_role_display(),
+            "unit": unit_dict(p.unit),
+            "position": p.position,
+        }
+        for p in Profile.objects.select_related("unit", "user").order_by("code")
+        if p.user.is_active
+    ])
 
 
 @api_view(["GET"])
@@ -203,15 +316,20 @@ def periods(request):
 def period_update(request, code):
     p = require(request, TECH | CONTENT_EDIT, "Звітні вікна налаштовує технічний адміністратор або уповноважений.")
     per = get_object_or_404(ReportingPeriod, code=code)
+    changes = []
     for f in ("force_open", "window_start", "window_end"):
         if f in request.data:
             old = getattr(per, f)
-            new = request.data[f]
-            if f != "force_open":
-                new = date.fromisoformat(new)
-            setattr(per, f, new)
+            new = bool(request.data[f]) if f == "force_open" else _parse_date(request.data[f], field=f)
+            if old != new:
+                setattr(per, f, new)
+                changes.append((f, old, new))
+    if per.window_end < per.window_start:
+        raise ValidationError({"window_end": "Кінець вікна не може бути раніше за початок."})
+    if changes:
+        per.save()
+        for f, old, new in changes:
             AuditLog.write(p, "змінено звітне вікно", "period", per.code, f, old, new)
-    per.save()
     return Response(period_dict(per))
 
 
@@ -220,21 +338,33 @@ def system_settings(request):
     s = SystemSettings.get()
     if request.method == "PATCH":
         p = require(request, TECH, "Налаштування змінює технічний адміністратор.")
-        for f in ("today_override", "window_days", "reminder_days", "min_survey_group"):
+        limits = {
+            "window_days": (1, 60),
+            "reminder_days": (1, 180),
+            "min_survey_group": (3, 100),
+        }
+        for f in ("today_override", "window_days", "reminder_days", "min_survey_group", "signatory_name", "head_signatory_name"):
             if f in request.data:
                 v = request.data[f]
                 if f == "today_override":
-                    v = date.fromisoformat(v) if v else None
+                    v = _parse_date(v, field=f, allow_empty=True)
+                elif f in ("signatory_name", "head_signatory_name"):
+                    v = str(v or "").strip()[:200]
                 else:
-                    v = int(v)
-                AuditLog.write(p, "змінено налаштування", "nalashtuvannia", "system", f, getattr(s, f), v)
-                setattr(s, f, v)
+                    lo, hi = limits[f]
+                    v = _parse_int(v, field=f, min_val=lo, max_val=hi)
+                if getattr(s, f) != v:
+                    AuditLog.write(p, "змінено налаштування", "nalashtuvannia", "system", f, getattr(s, f), v)
+                    setattr(s, f, v)
         s.save()
     else:
         profile(request)
+    sig1, sig2 = SystemSettings.signatories()
     return Response({"today_override": s.today_override, "today": SystemSettings.today(),
                      "window_days": s.window_days, "reminder_days": s.reminder_days,
-                     "min_survey_group": s.min_survey_group})
+                     "min_survey_group": s.min_survey_group,
+                     "signatory_name": sig1,
+                     "head_signatory_name": sig2})
 
 
 @api_view(["GET"])
@@ -302,13 +432,17 @@ def _measure_create(request, p):
     while Measure.objects.filter(code=code).exists():
         n += 1
         code = f"Z-{n:02d}"
+    strok_type = d.get("strok_type", "data")
+    if strok_type not in dict(Measure.STROK_TYPES):
+        raise ValidationError({"strok_type": "Невідомий тип строку."})
     m = Measure.objects.create(
-        code=code, program=pr, section=sec, number=sec.measures.count() + 1, content=d.get("content", ""),
-        risk=risk, responsible_unit=unit, strok_text=d.get("strok_text", ""), strok_type=d.get("strok_type", "data"),
-        strok_date=date.fromisoformat(d["strok_date"]) if d.get("strok_date") else None,
-        indicator=d.get("indicator", ""), indicator_unit=d.get("indicator_unit", ""),
-        indicator_target=float(d["indicator_target"]) if d.get("indicator_target") not in (None, "") else None,
-        required_evidence=d.get("required_evidence", ""), resources=d.get("resources", ""))
+        code=code, program=pr, section=sec, number=sec.measures.count() + 1, content=str(d.get("content", "")).strip(),
+        risk=risk, responsible_unit=unit, strok_text=str(d.get("strok_text", "")).strip()[:100], strok_type=strok_type,
+        strok_date=_parse_date(d.get("strok_date"), field="strok_date", allow_empty=True),
+        indicator=str(d.get("indicator", "")).strip()[:500], indicator_unit=str(d.get("indicator_unit", "")).strip()[:20],
+        indicator_target=_parse_float(d.get("indicator_target"), field="indicator_target"),
+        required_evidence=str(d.get("required_evidence", "")).strip()[:500],
+        resources=str(d.get("resources", "")).strip()[:300])
     AuditLog.write(p, "створено захід", "zakhid", m.code)
     return Response({"code": m.code}, status=201)
 
@@ -327,8 +461,7 @@ def measure_detail(request, code):
                 AuditLog.write(p, "змінено захід", "zakhid", m.code, f, getattr(m, f), request.data[f])
                 setattr(m, f, request.data[f])
         if "indicator_target" in request.data:
-            v = request.data["indicator_target"]
-            v = float(v) if v not in (None, "") else None
+            v = _parse_float(request.data["indicator_target"], field="indicator_target")
             AuditLog.write(p, "змінено захід", "zakhid", m.code, "indicator_target", m.indicator_target, v)
             m.indicator_target = v
         m.save()
@@ -344,7 +477,9 @@ def measure_detail(request, code):
         "risk_detail": None,
         "section_name": m.section.portal_name,
         "evidence": [evidence_dict(e) for e in m.evidence.all()],
-        "comments": [{"id": c.id, "author": c.author.code, "author_role": c.author.get_role_display(),
+        "comments": [{"id": c.id,
+                      "author": c.author.code if c.author else (c.author_code or "—"),
+                      "author_role": c.author.get_role_display() if c.author else (c.author_role_name or ""),
                       "text": c.text, "is_remark": c.is_remark, "created_at": c.created_at,
                       "period": c.period.code if c.period else None} for c in m.comments.select_related("author")],
         "deadline_changes": [{"decision_date": d.decision_date, "old_date": d.old_date, "new_date": d.new_date,
@@ -401,11 +536,11 @@ def execution_save(request, code):
                 raise ValidationError({"status": "Невідомий статус."})
             changes["status"] = d["status"]
         if "fact_date" in d:
-            changes["fact_date"] = date.fromisoformat(d["fact_date"]) if d["fact_date"] else None
+            changes["fact_date"] = _parse_date(d["fact_date"], field="fact_date", allow_empty=True)
         if "result_text" in d:
             changes["result_text"] = (d["result_text"] or "").strip()
         if "indicator_fact" in d:
-            changes["indicator_fact"] = float(d["indicator_fact"]) if d["indicator_fact"] not in (None, "") else None
+            changes["indicator_fact"] = _parse_float(d["indicator_fact"], field="indicator_fact")
         for f, v in changes.items():
             old = getattr(ex, f)
             if old != v:
@@ -466,11 +601,20 @@ def evidence_add(request, code):
     if not perm["allowed"]:
         raise PermissionDenied(f"Додавання недоступне: {perm['reason']}.")
     d = request.data
-    if not d.get("title") or not d.get("doc_date"):
+    title = str(d.get("title") or "").strip()[:500]
+    if not title or not d.get("doc_date"):
         raise ValidationError({"title": "Вкажіть назву і дату документа."})
+    doc_date = _parse_date(d.get("doc_date"), field="doc_date")
+    link = _validate_http_url(d.get("link"), field="link")
     f = request.FILES.get("file")
     h = hashlib.sha256()
     if f:
+        if f.size > MAX_EVIDENCE_BYTES:
+            raise ValidationError({"file": "Розмір файлу не має перевищувати 15 МБ."})
+        ext = Path(str(f.name or "")).suffix.lower()
+        if ext not in ALLOWED_EVIDENCE_EXTS:
+            allowed_str = ", ".join(sorted(ALLOWED_EVIDENCE_EXTS))
+            raise ValidationError({"file": f"Неприпустимий тип файлу ({ext or 'без розширення'}). Дозволені: {allowed_str}."})
         for chunk in f.chunks():
             h.update(chunk)
         f.seek(0)
@@ -480,9 +624,9 @@ def evidence_add(request, code):
         n += 1
         code_e = f"E-{n:03d}"
     if not f:
-        h.update(f"{code_e}|{m.code}|{d['title']}|{d['doc_date']}".encode("utf-8"))
-    e = Evidence(code=code_e, measure=m, period=period, type=d.get("type") or "документ", title=d["title"],
-                 doc_date=date.fromisoformat(d["doc_date"]), link=d.get("link") or "",
+        h.update(f"{code_e}|{m.code}|{title}|{doc_date.isoformat()}".encode("utf-8"))
+    e = Evidence(code=code_e, measure=m, period=period, type=str(d.get("type") or "документ").strip()[:50],
+                 title=title, doc_date=doc_date, link=link,
                  uploaded_at=timezone.now(), uploaded_by=p, sha256=h.hexdigest())
     if f:
         e.file = f
@@ -496,6 +640,25 @@ def evidence_verify(request, code):
     require(request, VIEW_ALL)
     e = get_object_or_404(Evidence, code=code)
     return Response({"code": e.code, "sha256": e.sha256, "file_ok": e.verify()})
+
+
+@api_view(["GET"])
+def evidence_file(request, code):
+    p = profile(request)
+    e = get_object_or_404(Evidence.objects.select_related("measure"), code=code)
+    if not can_see_measure(p, e.measure):
+        raise PermissionDenied("Немає доступу до матеріалів іншого підрозділу.")
+    if not e.file:
+        return Response({"detail": "Файл до цього запису не прикріплено."}, status=404)
+    try:
+        fh = e.file.open("rb")
+    except OSError:
+        return Response({"detail": "Файл підтвердження не знайдено на диску."}, status=404)
+    fname = Path(e.file.name).name
+    resp = FileResponse(fh, as_attachment=True, filename=fname)
+    resp["X-Content-Type-Options"] = "nosniff"
+    resp["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    return resp
 
 
 @api_view(["POST"])
@@ -519,11 +682,8 @@ def deadline_change(request, code):
     m = get_object_or_404(Measure, code=code)
     if m.strok_type != "data":
         raise ValidationError({"new_date": "Перенести можна лише строк, визначений датою."})
-    try:
-        new = date.fromisoformat(request.data.get("new_date") or "")
-    except ValueError:
-        raise ValidationError({"new_date": "Вкажіть новий строк."})
-    reason = (request.data.get("reason") or "").strip()
+    new = _parse_date(request.data.get("new_date"), field="new_date")
+    reason = str(request.data.get("reason") or "").strip()[:500]
     if not reason:
         raise ValidationError({"reason": "Вкажіть причину перенесення."})
     old = m.current_deadline
@@ -680,10 +840,10 @@ def recommendation_decide(request, pk):
         raise ValidationError({"state": "Невідомий стан."})
     if state == "accepted":
         unit = Unit.objects.filter(code=request.data.get("responsible_unit")).first()
-        due = request.data.get("due_date")
+        due = _parse_date(request.data.get("due_date"), field="due_date", allow_empty=True)
         if not unit or not due:
             raise ValidationError({"detail": "Прийнята рекомендація має мати відповідального і строк."})
-        r.responsible_unit, r.due_date = unit, date.fromisoformat(due)
+        r.responsible_unit, r.due_date = unit, due
     if state == "rejected" and not (request.data.get("comment") or "").strip():
         raise ValidationError({"comment": "Вкажіть причину відхилення."})
     AuditLog.write(p, "рішення щодо рекомендації", "rekomendatsiia", r.key, "state", r.state, state)
@@ -706,7 +866,7 @@ def _xlsx_response(filename, sheets):
             c.fill = head_fill
             c.alignment = Alignment(wrap_text=True, vertical="top")
         for row in data:
-            ws.append(row)
+            ws.append([_sanitize_export_cell(v) for v in row])
         for col in ws.columns:
             w = max(len(str(c.value or "")) for c in col[:50])
             ws.column_dimensions[col[0].column_letter].width = min(max(10, w * 0.9), 60)
@@ -732,9 +892,9 @@ def _docx_response(filename, content: bytes):
 def _csv_response(filename, header, data):
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(header)
-    w.writerows(data)
-    resp = HttpResponse("﻿" + buf.getvalue(), content_type="text/csv; charset=utf-8")
+    w.writerow([_sanitize_export_cell(h) for h in header])
+    w.writerows([[_sanitize_export_cell(v) for v in row] for row in data])
+    resp = HttpResponse("\ufeff" + buf.getvalue(), content_type="text/csv; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
 
@@ -743,8 +903,8 @@ def _csv_response(filename, header, data):
 def report_portal(request):
     """Звіт за півріччя у структурі Порталу доброчесності НАЗК."""
     require(request, VIEW_ALL)
-    year = int(request.query_params.get("year", 2026))
-    half = int(request.query_params.get("half", 1))
+    year = _parse_int(request.query_params.get("year", 2026), field="year", min_val=2000, max_val=2100)
+    half = _parse_int(request.query_params.get("half", 1), field="half", min_val=1, max_val=2)
     pr = Program.objects.first()
     rows = R.portal_report(pr, year, half)
     fmt = request.query_params.get("format", "json")
@@ -762,9 +922,11 @@ def report_portal(request):
             data = [[r[k] for k in keys] for r in rows if r["rozdil_portal"] == sec.portal_name]
             sheets.append((f"Розділ {sec.number}", names, data))
         return _xlsx_response(fname + ".xlsx", sheets)
+    sig1, sig2 = SystemSettings.signatories()
     return Response({"program": pr.name, "organ": pr.organ.name, "restricted_info": pr.restricted_info,
                      "year": year, "half": half, "columns": R.REPORT_COLUMNS, "rows": rows,
-                     "sections": [s.portal_name for s in Section.objects.filter(program=pr)]})
+                     "sections": [s.portal_name for s in Section.objects.filter(program=pr)],
+                     "signatory_name": sig1, "head_signatory_name": sig2})
 
 
 @api_view(["GET"])
@@ -806,6 +968,9 @@ def report_note(request):
         from .reports_docx import note_docx
         return _docx_response(f"analitychna_dovidka_{period.code}.docx", note_docx(period))
     note = R.analytic_note(period)
+    sig1, sig2 = SystemSettings.signatories()
+    note["signatory_name"] = sig1
+    note["head_signatory_name"] = sig2
     if request.query_params.get("format") == "md":
         resp = HttpResponse(note["markdown"], content_type="text/markdown; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="analitychna_dovidka_{period.code}.md"'
@@ -823,7 +988,8 @@ def selfcheck(request):
 
 # ---------------------------------------------------------------- журнал дій
 def _audit_dict(a: AuditLog):
-    return {"id": a.id, "ts": a.ts, "actor": a.actor.code if a.actor else None,
+    actor_code = a.resolved_actor_code or None
+    return {"id": a.id, "ts": a.ts, "actor": actor_code,
             "actor_role": a.actor.get_role_display() if a.actor else None, "action": a.action,
             "obj_type": a.obj_type, "obj_id": a.obj_id, "field": a.field, "old": a.old_value, "new": a.new_value,
             "hash": a.hash, "prev_hash": a.prev_hash}
@@ -837,10 +1003,11 @@ def audit(request):
     if q.get("obj_id"):
         qs = qs.filter(obj_id=q["obj_id"])
     if q.get("actor"):
-        qs = qs.filter(actor__code=q["actor"])
+        act = q["actor"].strip()
+        qs = qs.filter(actor_code__iexact=act) | qs.filter(actor__code__iexact=act)
     if q.get("action"):
         qs = qs.filter(action__icontains=q["action"])
-    limit = min(int(q.get("limit", 200)), 2000)
+    limit = _parse_int(q.get("limit", 200), field="limit", min_val=1, max_val=2000)
     return Response({"total": qs.count(), "items": [_audit_dict(a) for a in qs[:limit]]})
 
 
@@ -854,7 +1021,7 @@ def audit_verify(request):
 def audit_export(request):
     require(request, AUDIT)
     header = ["id", "chas", "korystuvach", "diia", "obiekt", "obiekt_id", "pole", "stare", "nove", "prev_hash", "hash"]
-    data = [[a.id, a.ts.isoformat(), a.actor.code if a.actor else "", a.action, a.obj_type, a.obj_id, a.field,
+    data = [[a.id, a.ts.isoformat(), a.resolved_actor_code, a.action, a.obj_type, a.obj_id, a.field,
              a.old_value, a.new_value, a.prev_hash, a.hash] for a in AuditLog.objects.select_related("actor")]
     return _csv_response("zhurnal_dii.csv", header, data)
 
@@ -912,43 +1079,83 @@ def users(request):
     if request.method == "POST":
         d = request.data
         code = (d.get("code") or "").strip().upper()
-        if not code or Profile.objects.filter(code=code).exists():
-            raise ValidationError({"code": "Код порожній або вже існує."})
+        if not code or not re.match(r"^[A-Z0-9_-]{2,10}$", code):
+            raise ValidationError({"code": "Код має містити 2–10 латинських літер, цифр або дефіс (наприклад, U-020)."})
+        if Profile.objects.filter(code=code).exists() or User.objects.filter(username=code.lower()).exists():
+            raise ValidationError({"code": "Обліковий запис із таким кодом уже існує."})
         if d.get("role") not in dict(Role.choices):
             raise ValidationError({"role": "Невідома роль."})
         unit = Unit.objects.filter(code=d.get("unit")).first()
         if d["role"] == Role.VYK and not unit:
             raise ValidationError({"unit": "Виконавцю потрібен підрозділ."})
-        u = User.objects.create_user(username=code.lower(), password=d.get("password") or "demo")
+        raw_pw = str(d.get("password") or "demo")
+        if len(raw_pw) < 4:
+            raise ValidationError({"password": "Пароль має містити щонайменше 4 символи."})
+        u = User.objects.create_user(username=code.lower(), password=raw_pw)
         Token.objects.create(user=u)
-        np = Profile.objects.create(user=u, code=code, role=d["role"], unit=unit, position=d.get("position", ""))
+        np = Profile.objects.create(user=u, code=code, full_name="",
+                                    role=d["role"], unit=unit, position=str(d.get("position") or "").strip()[:300])
         AuditLog.write(p, "створено обліковий запис", "korystuvach", code, "role", "", d["role"])
         return Response(profile_dict(np), status=201)
     return Response([profile_dict(x) for x in Profile.objects.select_related("unit", "user").order_by("code")])
 
 
-@api_view(["PATCH"])
+@api_view(["PATCH", "DELETE"])
 def user_update(request, code):
     p = require(request, TECH, "Облікові записи веде технічний адміністратор.")
     x = get_object_or_404(Profile, code=code)
+    if request.method == "DELETE":
+        if x.code == p.code:
+            raise ValidationError({"detail": "Не можна видалити власний обліковий запис."})
+        u = x.user
+        c_code = x.code
+        from django.db.models.deletion import ProtectedError
+        try:
+            with transaction.atomic():
+                Token.objects.filter(user=u).delete()
+                x.delete()
+                u.delete()
+                AuditLog.write(p, "видалено обліковий запис", "korystuvach", c_code)
+        except ProtectedError:
+            raise ValidationError({"detail": "Неможливо видалити користувача, оскільки з ним повʼязані захищені записи."})
+        return Response(status=status.HTTP_204_NO_CONTENT)
     d = request.data
     if "role" in d and d["role"] != x.role:
+        if d["role"] not in dict(Role.choices):
+            raise ValidationError({"role": "Невідома роль."})
+        if x.code == p.code and d["role"] != Role.ADMIN:
+            raise ValidationError({"role": "Не можна зняти роль адміністратора з власного облікового запису."})
+        target_unit = Unit.objects.filter(code=d["unit"]).first() if "unit" in d else x.unit
+        if d["role"] == Role.VYK and not target_unit:
+            raise ValidationError({"unit": "Виконавцю потрібен підрозділ."})
         AuditLog.write(p, "змінено роль", "korystuvach", x.code, "role", x.role, d["role"])
         x.role = d["role"]
     if "unit" in d:
         unit = Unit.objects.filter(code=d["unit"]).first()
-        AuditLog.write(p, "змінено підрозділ", "korystuvach", x.code, "unit", x.unit.code if x.unit else "",
-                       unit.code if unit else "")
-        x.unit = unit
+        if x.role == Role.VYK and not unit:
+            raise ValidationError({"unit": "Виконавцю потрібен підрозділ."})
+        if (x.unit.code if x.unit else "") != (unit.code if unit else ""):
+            AuditLog.write(p, "змінено підрозділ", "korystuvach", x.code, "unit", x.unit.code if x.unit else "",
+                           unit.code if unit else "")
+            x.unit = unit
     if "position" in d:
-        x.position = d["position"]
+        x.position = str(d["position"] or "").strip()[:300]
     x.save()
     if "is_active" in d:
-        x.user.is_active = bool(d["is_active"])
-        x.user.save()
-        AuditLog.write(p, "змінено активність", "korystuvach", x.code, "is_active", "", x.user.is_active)
+        new_active = bool(d["is_active"])
+        if x.code == p.code and not new_active:
+            raise ValidationError({"is_active": "Не можна заблокувати власний обліковий запис."})
+        if x.user.is_active != new_active:
+            x.user.is_active = new_active
+            x.user.save()
+            if not new_active:
+                Token.objects.filter(user=x.user).delete()
+            AuditLog.write(p, "змінено активність", "korystuvach", x.code, "is_active", not new_active, new_active)
     if d.get("password"):
-        x.user.set_password(d["password"])
+        raw_pw = str(d["password"])
+        if len(raw_pw) < 4:
+            raise ValidationError({"password": "Пароль має містити щонайменше 4 символи."})
+        x.user.set_password(raw_pw)
         x.user.save()
         Token.objects.filter(user=x.user).delete()
         Token.objects.create(user=x.user)
