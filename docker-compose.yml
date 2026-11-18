@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: akp
       POSTGRES_USER: akp
@@ -12,6 +13,7 @@ services:
       retries: 20
   app:
     build: .
+    restart: unless-stopped
     depends_on:
       db: {condition: service_healthy}
     environment:
