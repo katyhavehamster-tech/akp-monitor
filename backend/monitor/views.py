@@ -911,9 +911,16 @@ def report_portal(request):
     keys = [k for k, _ in R.REPORT_COLUMNS]
     names = [n for _, n in R.REPORT_COLUMNS]
     fname = f"zvit_portal_{year}_h{half}"
+
+    from . import verification as V
+    user_p = profile(request)
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    snapshot = V.get_or_create_portal_snapshot(year, half, user_p)
+    verify_url = f"{base_url}/verify?id={snapshot.id}&sig={snapshot.signature}"
+
     if fmt == "docx":
         from .reports_docx import portal_docx
-        return _docx_response(fname + ".docx", portal_docx(year, half))
+        return _docx_response(fname + ".docx", portal_docx(year, half, user_profile=user_p, base_url=base_url))
     if fmt == "csv":
         return _csv_response(fname + ".csv", keys, [[r[k] for k in keys] for r in rows])
     if fmt == "xlsx":
@@ -923,10 +930,101 @@ def report_portal(request):
             sheets.append((f"Розділ {sec.number}", names, data))
         return _xlsx_response(fname + ".xlsx", sheets)
     sig1, sig2 = SystemSettings.signatories()
-    return Response({"program": pr.name, "organ": pr.organ.name, "restricted_info": pr.restricted_info,
-                     "year": year, "half": half, "columns": R.REPORT_COLUMNS, "rows": rows,
-                     "sections": [s.portal_name for s in Section.objects.filter(program=pr)],
-                     "signatory_name": sig1, "head_signatory_name": sig2})
+    return Response({
+        "program": pr.name, "organ": pr.organ.name, "restricted_info": pr.restricted_info,
+        "year": year, "half": half, "columns": R.REPORT_COLUMNS, "rows": rows,
+        "sections": [s.portal_name for s in Section.objects.filter(program=pr)],
+        "signatory_name": sig1, "head_signatory_name": sig2,
+        "snapshot": {
+            "id": str(snapshot.id),
+            "created_at": snapshot.created_at.isoformat(),
+            "report_hash": snapshot.report_hash,
+            "signature": snapshot.signature,
+            "verify_url": f"/verify?id={snapshot.id}&sig={snapshot.signature}",
+            "qr_code": V.generate_qr_data_url(verify_url),
+        }
+    })
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def verify_report(request):
+    """Публічний ендпоїнт верифікації звіту за ідентифікатором та цифровим підписом HMAC."""
+    from .models import ReportSnapshot
+    from . import verification as V
+
+    snap_id = request.query_params.get("id", "").strip()
+    sig = request.query_params.get("sig", "").strip()
+    if not snap_id or not sig:
+        return Response({
+            "ok": False,
+            "status": "missing_params",
+            "valid_signature": False,
+            "message": "Параметри id та sig обов'язкові для верифікації звіту.",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        snapshot = ReportSnapshot.objects.select_related("period").get(id=snap_id)
+    except (ReportSnapshot.DoesNotExist, ValueError, DjangoValidationError):
+        return Response({
+            "ok": False,
+            "status": "not_found",
+            "valid_signature": False,
+            "message": "Зліпок звіту з таким ідентифікатором не знайдено в базі даних.",
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    # 1. Перевірка криптографічного HMAC-SHA256 підпису
+    is_valid_sig = snapshot.verify_signature(sig)
+    if not is_valid_sig:
+        return Response({
+            "ok": False,
+            "status": "invalid_signature",
+            "valid_signature": False,
+            "message": "Криптографічний підпис недійсний! Можлива спроба підробки або помилка в посиланні.",
+            "snapshot": {
+                "id": str(snapshot.id),
+                "year": snapshot.year,
+                "half": snapshot.half,
+                "created_at": snapshot.created_at.isoformat(),
+            }
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # 2. Звірка з поточним станом реєстру
+    pr = Program.objects.first()
+    current_rows = R.portal_report(pr, snapshot.year, snapshot.half)
+    current_hash = V.compute_report_hash(current_rows)
+    is_intact = (current_hash == snapshot.report_hash)
+
+    status_code = "verified_intact" if is_intact else "verified_modified"
+    message = (
+        "Звіт офіційно верифіковано: криптографічний підпис дійсний, дані повністю відповідають актуальному стану реєстру."
+        if is_intact else
+        "Криптографічний підпис дійсний (звіт був офіційно зафіксований), проте після його створення дані в реєстрі змінювалися."
+    )
+
+    return Response({
+        "ok": True,
+        "status": status_code,
+        "valid_signature": True,
+        "data_matches_current": is_intact,
+        "message": message,
+        "snapshot": {
+            "id": str(snapshot.id),
+            "period_code": snapshot.period.code,
+            "year": snapshot.year,
+            "half": snapshot.half,
+            "report_type": snapshot.report_type,
+            "created_at": snapshot.created_at.isoformat(),
+            "created_by": snapshot.created_by_code,
+            "organ_name": snapshot.organ_name,
+            "report_hash": snapshot.report_hash,
+            "signature": snapshot.signature,
+            "total_measures": snapshot.total_measures,
+            "rows_count": snapshot.rows_count,
+            "summary": snapshot.summary,
+        },
+        "current_hash": current_hash,
+    })
 
 
 @api_view(["GET"])

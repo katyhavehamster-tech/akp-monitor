@@ -84,6 +84,37 @@ function Portal() {
         <div><b>{sig2}</b></div>
       </div>
     </div>
+    {data.snapshot && (
+      <div className={printForm ? 'card' : 'print-only'} style={{ marginTop: '.85rem' }}>
+        <div className="report-verify-box">
+          <div className="report-verify-qr">
+            <img src={data.snapshot.qr_code} alt="QR-код верифікації звіту" width={112} height={112} />
+            <small className="muted">Відскануйте для перевірки</small>
+          </div>
+          <div className="report-verify-details">
+            <div className="report-verify-header">
+              <span className="report-verify-badge">ДСТУ 4163:2020 · ЕЛЕКТРОННА ВЕРИФІКАЦІЯ</span>
+              <h4>Криптографічний захист цілісності звіту</h4>
+            </div>
+            <p className="muted" style={{ margin: '.2rem 0 .5rem', fontSize: '.84rem' }}>
+              Документ зафіксовано в системі «АКП-Монітор» та підписано цифровим ключем сервера (HMAC-SHA256).
+            </p>
+            <div className="report-verify-grid">
+              <div><span className="muted">ID зліпка:</span> <code>{data.snapshot.id}</code></div>
+              <div><span className="muted">SHA-256 хеш даних:</span> <code className="break-all">{data.snapshot.report_hash}</code></div>
+              <div><span className="muted">Підпис HMAC-SHA256:</span> <code className="break-all">{data.snapshot.signature}</code></div>
+              <div><span className="muted">Дата фіксації:</span> {fmtDate(data.snapshot.created_at)}</div>
+              <div>
+                <span className="muted">Онлайн-верифікація:</span>{' '}
+                <a href={data.snapshot.verify_url} target="_blank" rel="noopener noreferrer">
+                  {window.location.origin + data.snapshot.verify_url}
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
   </>
 }
 

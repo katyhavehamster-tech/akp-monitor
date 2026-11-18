@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
+import uuid
 from datetime import date, timedelta
 from datetime import timezone as dt_timezone
 from pathlib import Path
@@ -485,3 +487,51 @@ class AuditLog(models.Model):
             prev = rec.hash
             n += 1
         return {"ok": True, "checked": n, "broken_at": None}
+
+
+class ReportSnapshot(models.Model):
+    """Незмінний зліпок офіційного звіту для перевірки цілісності (HMAC-SHA256).
+
+    Фіксує стан звіту на момент вивантаження/перегляду, хеш даних SHA-256
+    та цифровий підпис HMAC-SHA256 на основі SECRET_KEY сервера.
+    Забороняє редагування та видалення після збереження.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    period = models.ForeignKey(ReportingPeriod, on_delete=models.PROTECT, related_name="report_snapshots")
+    year = models.IntegerField(default=2026)
+    half = models.IntegerField(default=1)
+    report_type = models.CharField(max_length=50, default="portal")
+    created_at = models.DateTimeField(default=timezone.now)
+    created_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="report_snapshots")
+    created_by_code = models.CharField(max_length=30, blank=True, default="")
+    organ_name = models.CharField(max_length=255, blank=True, default="")
+    report_hash = models.CharField(max_length=64, help_text="SHA-256 канонічного JSON з рядками звіту")
+    signature = models.CharField(max_length=64, help_text="HMAC-SHA256 підпис сервера")
+    total_measures = models.IntegerField(default=0)
+    rows_count = models.IntegerField(default=0)
+    summary = models.JSONField(blank=True, default=dict)
+    raw_data = models.JSONField(blank=True, default=list)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Зліпок звіту"
+        verbose_name_plural = "Зліпки звітів"
+
+    def compute_signature(self, secret_key: str | None = None) -> str:
+        key = (secret_key or settings.SECRET_KEY).encode("utf-8")
+        payload = f"{self.id}:{self.period_id}:{self.year}:{self.half}:{self.report_hash}".encode("utf-8")
+        return hmac.new(key, payload, hashlib.sha256).hexdigest()
+
+    def verify_signature(self, sig: str) -> bool:
+        expected = self.compute_signature()
+        return hmac.compare_digest(self.signature, sig) and hmac.compare_digest(expected, sig)
+
+    def save(self, *args, **kwargs):
+        if self.pk and ReportSnapshot.objects.filter(pk=self.pk).exists():
+            raise ValidationError("Зліпок звіту незмінний: його не можна змінювати після створення.")
+        if not self.signature:
+            self.signature = self.compute_signature()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Зліпок звіту не можна видалити.")

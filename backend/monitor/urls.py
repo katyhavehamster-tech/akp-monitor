@@ -30,6 +30,7 @@ urlpatterns = [
     path("recommendations", v.recommendations),
     path("recommendations/<int:pk>/decide", v.recommendation_decide),
     path("reports/portal", v.report_portal),
+    path("reports/verify", v.verify_report),
     path("reports/internal", v.report_internal),
     path("reports/note", v.report_note),
     path("selfcheck", v.selfcheck),

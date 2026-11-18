@@ -90,7 +90,8 @@ def note_docx(period: ReportingPeriod) -> bytes:
     return D.to_bytes(doc)
 
 
-def portal_docx(year: int, half: int) -> bytes:
+def portal_docx(year: int, half: int, user_profile=None, base_url: str = "") -> bytes:
+    from . import verification as V
     pr = Program.objects.select_related("organ").first()
     rows = R.portal_report(pr, year, half)
     doc = D.new_document(landscape=True)
@@ -113,4 +114,21 @@ def portal_docx(year: int, half: int) -> bytes:
     sig1, sig2 = SystemSettings.signatories()
     D.signature(doc, ["Уповноважена особа з питань запобігання", "та виявлення корупції"], name=sig1)
     D.signature(doc, ["Керівник органу"], name=sig2)
+
+    # Криптографічний зліпок та QR-код верифікації
+    snapshot = V.get_or_create_portal_snapshot(year, half, user_profile)
+    b_url = (base_url or "https://akpmonitor.dev").rstrip("/")
+    verify_url = f"{b_url}/verify?id={snapshot.id}&sig={snapshot.signature}"
+    qr_bytes = V.generate_qr_png_bytes(verify_url)
+    created_at_str = snapshot.created_at.strftime("%d.%m.%Y %H:%M:%S UTC")
+    D.qr_verification_box(
+        doc,
+        qr_png_bytes=qr_bytes,
+        snapshot_id=str(snapshot.id),
+        report_hash=snapshot.report_hash,
+        signature=snapshot.signature,
+        created_at_str=created_at_str,
+        verify_url=verify_url,
+    )
+
     return D.to_bytes(doc)

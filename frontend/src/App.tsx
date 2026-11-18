@@ -21,6 +21,7 @@ const MyMeasures = lazy(() => import('./pages/MyMeasures'))
 const AdminUsers = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminUsers })))
 const AdminPeriods = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminPeriods })))
 const AdminSystem = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminSystem })))
+const Verify = lazy(() => import('./pages/Verify'))
 
 function Home() {
   const { profile } = useAuth()
@@ -41,6 +42,7 @@ export default function App() {
     <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/verify" element={<Verify />} />
         <Route element={<Guard />}>
           <Route path="/" element={<Home />} />
           <Route path="/surveys" element={<Surveys />} />

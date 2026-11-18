@@ -6,7 +6,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from monitor.models import AuditLog, Evidence, ReportingPeriod, SystemSettings
+from monitor.models import AuditLog, Evidence, ReportingPeriod, ReportSnapshot, SystemSettings
 from monitor.selfcheck import run_selfcheck
 from monitor.surveys import compare, parse_csv
 
@@ -227,3 +227,76 @@ class Security(Base):
         koord.post("/api/measures/Z-01/comments", {"text": "=CMD|' /C calc'!A0"}, format="json")
         csv_text = koord.get("/api/audit/export").content.decode("utf-8-sig")
         self.assertIn("'=CMD|", csv_text)
+
+
+class ReportVerification(Base):
+    def test_report_snapshot_immutability(self):
+        c = self.client_for("u-002")
+        r = c.get("/api/reports/portal?year=2026&half=1")
+        self.assertEqual(r.status_code, 200)
+        snap_id = r.json()["snapshot"]["id"]
+        snap = ReportSnapshot.objects.get(id=snap_id)
+
+        # Спроба модифікації
+        snap.organ_name = "Підроблений орган"
+        with self.assertRaises(ValidationError):
+            snap.save()
+
+        # Спроба видалення
+        with self.assertRaises(ValidationError):
+            snap.delete()
+
+    def test_portal_report_creates_snapshot_and_qr(self):
+        c = self.client_for("u-002")
+        r = c.get("/api/reports/portal?year=2026&half=1")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertIn("snapshot", data)
+        snap = data["snapshot"]
+        self.assertTrue(snap["id"])
+        self.assertTrue(snap["signature"])
+        self.assertTrue(snap["qr_code"].startswith("data:image/png;base64,"))
+        self.assertIn(f"/verify?id={snap['id']}&sig={snap['signature']}", snap["verify_url"])
+
+    def test_public_verify_endpoint(self):
+        c = self.client_for("u-002")
+        r = c.get("/api/reports/portal?year=2026&half=1")
+        snap = r.json()["snapshot"]
+
+        anon = APIClient()
+        # 1. Валідний запит (публічно без авторизації)
+        v_ok = anon.get(f"/api/reports/verify?id={snap['id']}&sig={snap['signature']}")
+        self.assertEqual(v_ok.status_code, 200)
+        v_data = v_ok.json()
+        self.assertEqual(v_data["status"], "verified_intact")
+        self.assertTrue(v_data["valid_signature"])
+        self.assertTrue(v_data["data_matches_current"])
+        self.assertEqual(v_data["snapshot"]["id"], snap["id"])
+
+        # 2. Підроблений підпис
+        v_tampered = anon.get(f"/api/reports/verify?id={snap['id']}&sig=tampered_signature_123")
+        self.assertEqual(v_tampered.status_code, 400)
+        self.assertEqual(v_tampered.json()["status"], "invalid_signature")
+        self.assertFalse(v_tampered.json()["valid_signature"])
+
+        # 3. Відсутні параметри
+        v_missing = anon.get("/api/reports/verify")
+        self.assertEqual(v_missing.status_code, 400)
+
+        # 4. Неіснуючий ID зі схожим підписом
+        fake_id = "00000000-0000-0000-0000-000000000000"
+        v_not_found = anon.get(f"/api/reports/verify?id={fake_id}&sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        self.assertEqual(v_not_found.status_code, 404)
+
+    def test_docx_export_contains_qr_verification(self):
+        c = self.client_for("u-002")
+        r = c.get("/api/reports/portal?year=2026&half=1&format=docx")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        # Перевірка що вміст docx містить бінарні zip-структури
+        self.assertTrue(len(r.content) > 5000)
+        self.assertTrue(r.content.startswith(b"PK\x03\x04"))
+

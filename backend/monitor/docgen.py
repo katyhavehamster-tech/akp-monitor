@@ -356,3 +356,89 @@ def _clean(t: str) -> str:
     t = t.replace("<br>", " ").replace("<br/>", " ")
     t = re.sub(r"(?<!\*)\*(?!\*)([^*]+)(?<!\*)\*(?!\*)", r"\1", t)  # курсив *x*
     return t.strip()
+
+
+def qr_verification_box(doc, qr_png_bytes: bytes, snapshot_id: str, report_hash: str, signature: str, created_at_str: str, verify_url: str):
+    """Додає блок електронної верифікації з QR-кодом та криптографічним HMAC-підписом у кінець Word-документа."""
+    import io
+    from docx.shared import Mm, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+
+    doc.add_paragraph()
+    t = doc.add_table(rows=1, cols=2)
+    t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    w_total = text_width(doc)
+    w_qr = Mm(36)
+    w_info = w_total - w_qr
+
+    row = t.rows[0]
+    cell_qr = row.cells[0]
+    cell_qr.width = w_qr
+    cell_info = row.cells[1]
+    cell_info.width = w_info
+
+    p_qr = cell_qr.paragraphs[0]
+    p_qr.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_qr.paragraph_format.space_before = Pt(4)
+    p_qr.paragraph_format.space_after = Pt(2)
+    p_qr.paragraph_format.line_spacing = 1.0
+    r_qr = p_qr.add_run()
+    r_qr.add_picture(io.BytesIO(qr_png_bytes), width=Mm(30))
+
+    p_hint = cell_qr.add_paragraph()
+    p_hint.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_hint.paragraph_format.space_before = Pt(0)
+    p_hint.paragraph_format.space_after = Pt(4)
+    p_hint.paragraph_format.line_spacing = 1.0
+    r_hint = p_hint.add_run("Відскануйте для перевірки")
+    r_hint.font.name = FONT
+    r_hint.font.size = Pt(8)
+    r_hint.font.italic = True
+    r_hint.font.color.rgb = RGBColor(100, 100, 100)
+
+    p_title = cell_info.paragraphs[0]
+    p_title.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_title.paragraph_format.space_before = Pt(4)
+    p_title.paragraph_format.space_after = Pt(2)
+    p_title.paragraph_format.line_spacing = 1.0
+    r_title = p_title.add_run("ЕЛЕКТРОННА ВЕРИФІКАЦІЯ ТА ЦІЛІСНІСТЬ ЗВІТУ")
+    r_title.bold = True
+    r_title.font.name = FONT
+    r_title.font.size = Pt(9.5)
+
+    p_sub = cell_info.add_paragraph()
+    p_sub.paragraph_format.space_before = Pt(0)
+    p_sub.paragraph_format.space_after = Pt(3)
+    p_sub.paragraph_format.line_spacing = 1.0
+    r_sub = p_sub.add_run("Документ зафіксовано в системі «АКП-Монітор» та підписано HMAC-SHA256 ключем сервера.")
+    r_sub.font.name = FONT
+    r_sub.font.size = Pt(8.5)
+    r_sub.font.italic = True
+
+    lines = [
+        ("ID зліпка: ", str(snapshot_id)),
+        ("SHA-256 хеш даних: ", report_hash),
+        ("Підпис HMAC-SHA256: ", signature),
+        ("Дата та час фіксації: ", created_at_str),
+        ("Онлайн-перевірка: ", verify_url),
+    ]
+    for label, val in lines:
+        p_line = cell_info.add_paragraph()
+        p_line.paragraph_format.space_before = Pt(0)
+        p_line.paragraph_format.space_after = Pt(1.5)
+        p_line.paragraph_format.line_spacing = 1.0
+        r_lbl = p_line.add_run(label)
+        r_lbl.bold = True
+        r_lbl.font.name = FONT
+        r_lbl.font.size = Pt(8)
+        r_val = p_line.add_run(val)
+        r_val.font.name = "Courier New" if ("хеш" in label.lower() or "підпис" in label.lower() or "id" in label.lower()) else FONT
+        r_val.font.size = Pt(7.5 if len(val) > 40 else 8)
+        if "перевірка" in label.lower():
+            r_val.font.color.rgb = RGBColor(0, 68, 148)
+            r_val.underline = True
+
+    return t
