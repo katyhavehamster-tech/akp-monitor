@@ -29,7 +29,7 @@ export function Watermark() {
   return (
     <div className="watermark-overlay" aria-hidden="true">
       <div className="watermark-grid">
-        {Array.from({ length: 30 }).map((_, i) => (
+        {Array.from({ length: 48 }).map((_, i) => (
           <div key={i} className="watermark-item">
             {text}
           </div>
