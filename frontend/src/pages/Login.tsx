@@ -95,12 +95,9 @@ export default function Login() {
               {busy ? 'Вхід…' : 'Увійти'}
             </button>
           </div>
-          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.84rem', flexWrap: 'wrap', gap: '.5rem' }}>
-            <Link to="/public" style={{ color: 'var(--primary, #3b82f6)', fontWeight: 500 }}>
-              ← Публічний портал
-            </Link>
-            <Link to="/verify" className="muted" style={{ textDecoration: 'underline' }}>
-              Верифікація звіту ДСТУ
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '.84rem' }}>
+            <Link to="/public" style={{ color: 'var(--accent)', fontWeight: 500 }}>
+              ← Відкритий публічний портал моніторингу програми
             </Link>
           </div>
         </form>
