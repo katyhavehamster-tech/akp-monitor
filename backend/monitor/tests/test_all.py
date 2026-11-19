@@ -762,6 +762,7 @@ class OwaspSecurityTests(Base):
 
     def test_evidence_whitelist_and_magic_bytes_validation(self):
         """Сувора перевірка білого списку розширень, блокування макросів та валідація magic bytes."""
+        import io
         import zipfile
         from django.core.files.uploadedfile import SimpleUploadedFile
         c = self.client_for("u-002")

@@ -410,8 +410,9 @@ def login(request):
     username = clean_username.lower()[:64]
 
     ip = _client_ip(request)
-    user_key = f"login_fail:u:{username}" if username else None
-    ip_key = f"login_fail:ip:{ip}"
+    user_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()[:32] if username else None
+    user_key = f"login_fail:u:{user_hash}" if user_hash else None
+    ip_key = f"login_fail:ip:{hashlib.sha256(ip.encode('utf-8')).hexdigest()[:32]}"
 
     user_att = cache.get(user_key, 0) if user_key else 0
     ip_att = cache.get(ip_key, 0)
