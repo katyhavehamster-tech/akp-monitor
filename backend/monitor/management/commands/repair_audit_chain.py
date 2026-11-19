@@ -48,9 +48,9 @@ class Command(BaseCommand):
         self.stdout.write("Відновлення ланцюжка хешів…")
 
         with transaction.atomic():
-            # Блокуємо таблицю від паралельного запису
+            # Блокуємо таблицю від паралельного запису (без select_related, щоб уникнути помилки PostgreSQL FOR UPDATE на outer join)
             all_entries = list(
-                AuditLog.objects.select_for_update().order_by("id").select_related("actor")
+                AuditLog.objects.select_for_update().order_by("id")
             )
 
             prev_hash = "0" * 64
