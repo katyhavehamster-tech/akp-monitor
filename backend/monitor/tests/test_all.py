@@ -790,7 +790,7 @@ class OwaspSecurityTests(Base):
             "title": "Fake PDF", "doc_date": "2026-06-01", "file": fake_pdf
         }, format="multipart")
         self.assertEqual(r_pdf.status_code, 400)
-        self.assertIn("PDF", str(r_pdf.content))
+        self.assertIn("PDF", r_pdf.content.decode("utf-8"))
 
         # 3. Фейковий DOCX (не ZIP)
         fake_docx = SimpleUploadedFile("fake.docx", b"NOT_A_ZIP_CONTAINER", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
@@ -810,7 +810,7 @@ class OwaspSecurityTests(Base):
             "title": "Macro DOCX", "doc_date": "2026-06-01", "file": macro_docx
         }, format="multipart")
         self.assertEqual(r_macro.status_code, 400)
-        self.assertIn("макроси", str(r_macro.content))
+        self.assertIn("макроси", r_macro.content.decode("utf-8"))
 
         # 5. Валідний PNG файл
         valid_png = SimpleUploadedFile("valid.png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRtest", content_type="image/png")
