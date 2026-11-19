@@ -1,6 +1,7 @@
 """Тести: python manage.py test monitor"""
 from datetime import date
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.test import TestCase
@@ -18,6 +19,10 @@ class Base(TestCase):
     @classmethod
     def setUpTestData(cls):
         call_command("import_dataset", verbosity=0)
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
 
     def client_for(self, code):
         c = APIClient()

@@ -351,8 +351,8 @@ def login(request):
     username = (request.data.get("username") or "").strip().lower()[:64]
     password = request.data.get("password") or ""
     ip = _client_ip(request)
-    user_key = f"login_rate:u:{username}" if username else None
-    ip_key = f"login_rate:ip:{ip}"
+    user_key = f"login_fail:u:{username}" if username else None
+    ip_key = f"login_fail:ip:{ip}"
 
     user_att = cache.get(user_key, 0) if user_key else 0
     ip_att = cache.get(ip_key, 0)
@@ -363,17 +363,16 @@ def login(request):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    # Фіксуємо спробу запиту (вікно 60 секунд — не більше 10 на хвилину)
-    cache.set(ip_key, ip_att + 1, 60)
-    if user_key:
-        cache.set(user_key, user_att + 1, 60)
-
     if not username or not password:
+        cache.set(ip_key, ip_att + 1, 60)
         AuditLog.write(None, "невдала спроба входу", "korystuvach", (username or "unknown")[:30])
         return Response({"detail": "Невірний логін або пароль."}, status=400)
 
     u = authenticate(username=username, password=password)
     if not u or not hasattr(u, "profile"):
+        cache.set(ip_key, ip_att + 1, 60)
+        if user_key:
+            cache.set(user_key, user_att + 1, 60)
         AuditLog.write(None, "невдала спроба входу", "korystuvach", (username or "unknown")[:30])
         return Response({"detail": "Невірний логін або пароль."}, status=400)
 
