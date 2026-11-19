@@ -30,15 +30,71 @@ export class ApiError extends Error {
   }
 }
 
+/** Отримання CSRF-токену з cookie (Django standard csrftoken). */
+export function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null
+  const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
+let csrfPromise: Promise<string | null> | null = null
+
+/** Гарантує наявність csrftoken у cookie (викликає /api/auth/csrf при відсутності). */
+export async function ensureCsrf(): Promise<string | null> {
+  const existing = getCsrfToken()
+  if (existing) return existing
+  if (!csrfPromise) {
+    csrfPromise = (async () => {
+      try {
+        const r = await fetch('/api/auth/csrf', { credentials: 'include' })
+        if (r.ok) {
+          const data = await r.json().catch(() => ({}))
+          return (data && data.csrfToken) || getCsrfToken()
+        }
+      } catch {
+        /* ignore */
+      }
+      return getCsrfToken()
+    })().finally(() => {
+      csrfPromise = null
+    })
+  }
+  return csrfPromise
+}
+
 export async function api<T = Any>(path: string, opts: { method?: string; body?: Any; form?: FormData; keepalive?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = {}
   const t = getToken()
   if (t) headers.Authorization = `Token ${t}`
+
+  const method = (opts.method || (opts.form || opts.body !== undefined ? 'POST' : 'GET')).toUpperCase()
+  const isUnsafe = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+
+  if (isUnsafe) {
+    let csrf = getCsrfToken()
+    if (!csrf) {
+      csrf = await ensureCsrf()
+    }
+    if (csrf) {
+      headers['X-CSRFToken'] = csrf
+    }
+  }
+
   let body: BodyInit | undefined
   if (opts.form) body = opts.form
-  else if (opts.body !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(opts.body) }
+  else if (opts.body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    body = JSON.stringify(opts.body)
+  }
+
   const url = path.startsWith('/api/') ? path : `/api/${path}`
-  const r = await fetch(url, { method: opts.method || (body ? 'POST' : 'GET'), headers, body, keepalive: opts.keepalive })
+  const r = await fetch(url, {
+    method,
+    headers,
+    body,
+    credentials: 'include',
+    keepalive: opts.keepalive,
+  })
   if (r.status === 204) return undefined as T
   const ct = r.headers.get('content-type') || ''
   const data = ct.includes('json') ? await r.json() : await r.text()
@@ -53,7 +109,10 @@ export async function api<T = Any>(path: string, opts: { method?: string; body?:
 export async function download(path: string, filename: string) {
   const t = getToken()
   const urlPath = path.startsWith('/api/') ? path : `/api/${path}`
-  const r = await fetch(urlPath, { headers: t ? { Authorization: `Token ${t}` } : {} })
+  const r = await fetch(urlPath, {
+    headers: t ? { Authorization: `Token ${t}` } : {},
+    credentials: 'include',
+  })
   if (!r.ok) {
     const msg = r.status === 403
       ? 'Недостатньо прав для доступу до цього файлу.'

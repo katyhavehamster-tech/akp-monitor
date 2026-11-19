@@ -18,13 +18,15 @@ from django.core.validators import URLValidator
 from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse, HttpResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.views.decorators.csrf import ensure_csrf_cookie
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
@@ -211,8 +213,43 @@ def _context(period, p):
 
 
 # ---------------------------------------------------------------- авторизація
-@api_view(["POST"])
+@api_view(["GET"])
+@authentication_classes([])
 @permission_classes([AllowAny])
+@ensure_csrf_cookie
+def csrf_token_view(request):
+    """Повертає дійсний CSRF-токен та встановлює cookie csrftoken для фронтенд-клієнта."""
+    token = get_token(request)
+    return Response({"ok": True, "csrfToken": token})
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@ensure_csrf_cookie
+def public_overview(request):
+    """Публічний огляд антикорупційної програми (із гарантованою видачею csrftoken)."""
+    pr = Program.objects.select_related("organ", "coordinator_unit").first()
+    cur_p = default_period()
+    total_measures = Measure.objects.filter(is_excluded=False).count()
+    return Response({
+        "ok": True,
+        "csrfToken": get_token(request),
+        "program": {
+            "title": pr.name if pr else "Антикорупційна програма",
+            "organ": pr.organ.name if pr and pr.organ else "ХНУВС",
+            "year_start": pr.period_start.year if pr and pr.period_start else 2026,
+            "year_end": pr.period_end.year if pr and pr.period_end else 2028,
+        },
+        "period": cur_p.code if cur_p else None,
+        "total_measures": total_measures,
+    })
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@ensure_csrf_cookie
 def login(request):
     username = (request.data.get("username") or "").strip().lower()[:64]
     password = request.data.get("password") or ""
@@ -233,7 +270,11 @@ def login(request):
     cache.delete(user_key)
     token, _ = Token.objects.get_or_create(user=u)
     AuditLog.write(u.profile, "вхід у систему", "korystuvach", u.profile.code)
-    return Response({"token": token.key, "profile": profile_dict(u.profile)})
+    return Response({
+        "token": token.key,
+        "profile": profile_dict(u.profile),
+        "csrfToken": get_token(request),
+    })
 
 
 @api_view(["POST"])
@@ -247,6 +288,7 @@ def logout(request):
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
+@ensure_csrf_cookie
 def demo_users(request):
     """Список демо-облікових записів для сторінки входу (лише синтетичні ролі, без імен)."""
     if not getattr(settings, "AKP_DEMO_MODE", True):
@@ -266,11 +308,17 @@ def demo_users(request):
 
 
 @api_view(["GET"])
+@ensure_csrf_cookie
 def me(request):
     p = profile(request)
     today = SystemSettings.today()
     per = default_period()
-    return Response({"profile": profile_dict(p), "today": today, "current_period": period_dict(per, today)})
+    return Response({
+        "profile": profile_dict(p),
+        "today": today,
+        "current_period": period_dict(per, today),
+        "csrfToken": get_token(request),
+    })
 
 
 # ---------------------------------------------------------------- програма і довідники

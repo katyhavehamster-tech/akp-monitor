@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.http import FileResponse, HttpResponse
 from django.urls import include, path, re_path
+from django.views.decorators.csrf import ensure_csrf_cookie
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 STATIC_EXTS = {
@@ -12,6 +13,7 @@ STATIC_EXTS = {
 }
 
 
+@ensure_csrf_cookie
 def spa(request, *args, **kwargs):
     """Віддає статичні файли з frontend/dist або index.html для маршрутів SPA."""
     dist = settings.FRONTEND_DIST

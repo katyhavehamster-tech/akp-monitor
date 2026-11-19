@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Moon, Sun } from 'lucide-react'
+import { ensureCsrf } from '../api'
 import { useAuth } from '../auth'
 import { Emblem, useTheme } from '../components/Layout'
 
@@ -13,6 +14,10 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+
+  useEffect(() => {
+    ensureCsrf().catch(() => {})
+  }, [])
 
   const submit = async () => {
     if (busy) return

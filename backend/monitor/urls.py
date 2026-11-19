@@ -3,10 +3,18 @@ from django.urls import path
 from . import views as v
 
 urlpatterns = [
+    path("auth/csrf", v.csrf_token_view),
+    path("auth/csrf/", v.csrf_token_view),
     path("auth/login", v.login),
+    path("auth/login/", v.login),
     path("auth/logout", v.logout),
+    path("auth/logout/", v.logout),
     path("auth/demo-users", v.demo_users),
+    path("auth/demo-users/", v.demo_users),
     path("auth/me", v.me),
+    path("auth/me/", v.me),
+    path("public/overview", v.public_overview),
+    path("public/overview/", v.public_overview),
     path("program", v.program),
     path("program/update", v.program_update),
     path("units", v.units),

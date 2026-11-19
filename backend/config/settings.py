@@ -120,6 +120,8 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_NAME = "csrftoken"
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
@@ -156,8 +158,15 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",") if o.strip()
 ]
 
-CSRF_TRUSTED_ORIGINS = [
-    o.strip() for o in os.environ.get(
-        "DJANGO_CSRF_ORIGINS", "https://akpmonitor.dev,http://localhost:8000,http://127.0.0.1:8000"
-    ).split(",") if o.strip()
-]
+raw_csrf = os.environ.get(
+    "DJANGO_CSRF_ORIGINS", "https://akpmonitor.dev,http://localhost:8000,http://127.0.0.1:8000"
+)
+CSRF_TRUSTED_ORIGINS = sorted(list({
+    o.strip() for o in raw_csrf.split(",") if o.strip()
+} | {
+    "https://akpmonitor.dev",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+}))

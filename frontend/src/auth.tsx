@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import { api, getToken, setToken, type Any } from './api'
+import { api, ensureCsrf, getToken, setToken, type Any } from './api'
 
 export type Role = 'KOORD' | 'ADMIN' | 'KER' | 'VYK' | 'ANAL'
 export interface Profile { code: string; role: Role; role_name: string; unit: { code: string; name: string } | null; position: string }
@@ -38,9 +38,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReady(true)
   }, [])
 
-  useEffect(() => { reloadMe() }, [reloadMe])
+  useEffect(() => {
+    ensureCsrf().catch(() => {})
+    reloadMe()
+  }, [reloadMe])
 
   const login = async (username: string, password: string) => {
+    await ensureCsrf()
     const r = await api('auth/login', { body: { username, password } })
     setToken(r.token)
     setPeriod('')

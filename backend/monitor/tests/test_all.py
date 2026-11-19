@@ -262,6 +262,35 @@ class Security(Base):
         self.assertEqual(dl["X-Content-Type-Options"], "nosniff")
         self.assertIn("attachment", dl["Content-Disposition"])
 
+    def test_csrf_cookie_issuance_and_auth(self):
+        anon = APIClient(enforce_csrf_checks=True)
+        # 1. /api/auth/csrf видає csrftoken та встановлює cookie
+        r_csrf = anon.get("/api/auth/csrf")
+        self.assertEqual(r_csrf.status_code, 200)
+        self.assertIn("csrfToken", r_csrf.json())
+        token = r_csrf.json()["csrfToken"]
+        self.assertTrue(bool(token))
+        self.assertIn("csrftoken", anon.cookies)
+
+        # 2. /api/public/overview також видає csrftoken
+        r_ov = anon.get("/api/public/overview")
+        self.assertEqual(r_ov.status_code, 200)
+        self.assertIn("csrfToken", r_ov.json())
+
+        # 3. Вхід за логіном/паролем із передачею X-CSRFToken
+        r_login = anon.post("/api/auth/login", {
+            "username": "u-002", "password": "demo"
+        }, format="json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(r_login.status_code, 200, r_login.content)
+        self.assertIn("token", r_login.json())
+
+        # 4. Вхід безпосередньо без попередньої сесії
+        fresh_client = APIClient(enforce_csrf_checks=True)
+        r_direct = fresh_client.post("/api/auth/login", {
+            "username": "u-002", "password": "demo"
+        }, format="json")
+        self.assertEqual(r_direct.status_code, 200, r_direct.content)
+
     def test_logout_revokes_token_and_login_rate_limit(self):
         from django.core.cache import cache
         cache.clear()
