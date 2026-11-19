@@ -685,6 +685,8 @@ class ReportVerification(Base):
             m_z01 = next((item for item in data["items"] if item["code"] == "Z-01"), None)
             self.assertIsNotNone(m_z01)
             self.assertIn("Проведено робочу зустріч", m_z01["result_text"])
+            self.assertIn("monitoring", data)
+            self.assertIn("on_time_of_dated_done", data["monitoring"]["percent"])
 
             # 3. При увімкненні режиму ІзОД / ДСК публічний реєстр обмежує деталізований вміст
             pr.restricted_info = True

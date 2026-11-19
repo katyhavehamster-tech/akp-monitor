@@ -278,6 +278,7 @@ def public_measures(request):
 
     period = get_period(request)
     snaps = R.snapshot(period, Measure.objects.filter(program=pr, is_excluded=False))
+    mon = R.monitoring(period, snaps)
 
     items = []
     for s in snaps:
@@ -329,6 +330,7 @@ def public_measures(request):
         "total_measures": len(items),
         "items": items,
         "sections": sections,
+        "monitoring": mon,
     })
 
 

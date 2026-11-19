@@ -55,7 +55,7 @@ export default function Dashboard() {
       <Stat v={`${p.ne_vykonano}%`} l="Не виконано" s={`${c.portal_not_done} (строк минув або не виконано)`} tone="bad" onClick={() => go('status=Не виконано')} />
       <Stat v={`${p.v_roboti}%`} l="На стадії виконання" s={`${c.v_roboti} у роботі`} onClick={() => go('status=v_roboti')} />
       <Stat v={`${p.postponed}%`} l="Строк перенесено" s={`${c.postponed} заходів`} tone="warn" onClick={() => go('postponed=1')} />
-      <Stat v={c.done_on_time} l="Виконано вчасно" s={`${c.done_late} із запізненням${p.on_time_of_dated_done !== null ? ` · ${p.on_time_of_dated_done}% вчасно` : ''}`} tone="ok" />
+      <Stat v={p.on_time_of_dated_done !== null && p.on_time_of_dated_done !== undefined ? `${p.on_time_of_dated_done}%` : '—'} l="Виконано вчасно" s={`${c.done_on_time} вчасно · ${c.done_late} із запізненням`} tone="ok" />
       <Stat v={`${p.overdue}%`} l="Прострочено" s={`${c.overdue} заходів за строком програми`} tone="bad" onClick={() => go('flag=RF1')} />
       <Stat v={`${p.chastkovo}%`} l="Частково виконано" s={`${c.chastkovo} заходів`} tone="warn" onClick={() => go('status=chastkovo')} />
       <Stat v={`${p.not_due}%`} l="Строк не настав" s={`${c.not_due} заходів`} tone="grey" />

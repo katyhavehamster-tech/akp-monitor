@@ -2354,6 +2354,12 @@ textarea { min-height: 110px; resize: vertical; }
 .public-portal-stat-box.progress .public-portal-stat-num { color: var(--accent); }
 .public-portal-stat-box.bad .public-portal-stat-lbl { color: var(--bad); }
 .public-portal-stat-box.bad .public-portal-stat-num { color: var(--bad); }
+.public-portal-stat-sub {
+  font-size: .74rem;
+  color: var(--muted);
+  line-height: 1.25;
+  margin-top: .15rem;
+}
 
 /* Блок графіків та візуалізації на публічному порталі */
 .public-portal-charts-section {
@@ -3030,6 +3036,10 @@ textarea { min-height: 110px; resize: vertical; }
   }
   .public-portal-stat-num {
     font-size: 1.15rem;
+  }
+  .public-portal-stat-sub {
+    font-size: .68rem;
+    line-height: 1.2;
   }
   .public-portal-charts-section {
     padding: .75rem .55rem;

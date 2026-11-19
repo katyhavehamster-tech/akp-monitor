@@ -55,8 +55,20 @@ export default function PublicPortal() {
     const inProgress = items.filter(i => ['v_roboti', 'chastkovo'].includes(i.status)).length
     const notDue = items.filter(i => i.status === 'ne_rozpochato').length
     const failed = items.filter(i => i.status === 'ne_vykonano').length
-    return { total, done, inProgress, notDue, failed }
-  }, [items])
+
+    let doneOnTime = data?.monitoring?.counts?.done_on_time
+    let doneLate = data?.monitoring?.counts?.done_late
+    let onTimePct = data?.monitoring?.percent?.on_time_of_dated_done
+
+    if (doneOnTime === undefined || onTimePct === undefined) {
+      const datedDone = items.filter(i => i.status === 'vykonano' && i.strok_type === 'data' && i.fact_date)
+      doneOnTime = datedDone.filter(i => i.strok_date && i.fact_date <= i.strok_date).length
+      doneLate = datedDone.length - doneOnTime
+      onTimePct = datedDone.length > 0 ? Number((100 * doneOnTime / datedDone.length).toFixed(1)) : null
+    }
+
+    return { total, done, inProgress, notDue, failed, doneOnTime, doneLate, onTimePct }
+  }, [items, data?.monitoring])
 
   const statusChartData = useMemo(() => {
     const total = items.length
@@ -254,6 +266,15 @@ export default function PublicPortal() {
               <div className="public-portal-stat-box ok">
                 <div className="public-portal-stat-lbl">Виконано</div>
                 <div className="public-portal-stat-num">{stats.done}</div>
+              </div>
+              <div className="public-portal-stat-box ok">
+                <div className="public-portal-stat-lbl">Виконано вчасно</div>
+                <div className="public-portal-stat-num">
+                  {stats.onTimePct !== null && stats.onTimePct !== undefined ? `${stats.onTimePct}%` : '—'}
+                </div>
+                <div className="public-portal-stat-sub">
+                  {stats.doneOnTime} вчасно · {stats.doneLate} із запізненням
+                </div>
               </div>
               <div className="public-portal-stat-box progress">
                 <div className="public-portal-stat-lbl">У роботі / частково</div>
