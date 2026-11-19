@@ -62,3 +62,8 @@ urlpatterns = [
     )),
     re_path(r"^(?!api/|django-admin/|static/|media/).*$", spa),
 ]
+
+handler400 = "monitor.views.custom_400"
+handler403 = "monitor.views.custom_403"
+handler404 = "monitor.views.custom_404"
+handler500 = "monitor.views.custom_500"

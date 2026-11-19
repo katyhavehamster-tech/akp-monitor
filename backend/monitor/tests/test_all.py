@@ -864,6 +864,56 @@ class OwaspSecurityTests(Base):
         self.assertNotIn("wrong_password_test", last_log.old_value)
         self.assertNotIn("wrong_password_test", last_log.new_value)
 
+    def test_evidence_max_size_limit_20mb(self):
+        """Перевірка жорсткого обмеження розміру файлу Evidence (20 МБ)."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        c = self.client_for("u-002")
+
+        # Симулюємо файл розміром 21 МБ
+        oversized = SimpleUploadedFile(
+            "large_doc.pdf",
+            b"%PDF-1.4 " + b"0" * 100,
+            content_type="application/pdf"
+        )
+        oversized.size = 21 * 1024 * 1024  # 21 MB
+        r = c.post("/api/measures/Z-01/evidence", {
+            "title": "Завеликий файл", "doc_date": "2026-06-01", "file": oversized
+        }, format="multipart")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json().get("file"), "Розмір файлу не повинен перевищувати 20 МБ.")
+
+    def test_unified_error_handler_no_stacktrace(self):
+        """Уніфікований JSON-обробник помилок 400/403/404/500 без витоку стектрейсів."""
+        from monitor.views import custom_400, custom_403, custom_404, custom_500, custom_exception_handler
+        from django.test import RequestFactory
+        import json
+
+        rf = RequestFactory()
+        req = rf.get("/api/unknown/endpoint")
+
+        r400 = custom_400(req)
+        self.assertEqual(r400.status_code, 400)
+        self.assertEqual(json.loads(r400.content)["detail"], "Некоректний запит.")
+
+        r403 = custom_403(req)
+        self.assertEqual(r403.status_code, 403)
+        self.assertEqual(json.loads(r403.content)["detail"], "Доступ заборонено.")
+
+        r404 = custom_404(req)
+        self.assertEqual(r404.status_code, 404)
+        self.assertEqual(json.loads(r404.content)["detail"], "Запитуваний ресурс не знайдено.")
+
+        r500 = custom_500(req)
+        self.assertEqual(r500.status_code, 500)
+        self.assertEqual(json.loads(r500.content)["detail"], "Внутрішня помилка сервера. Спробуйте пізніше.")
+        self.assertNotIn("Traceback", r500.content.decode("utf-8"))
+
+        # Тест custom_exception_handler для неочікуваного RuntimeError
+        drf_resp = custom_exception_handler(RuntimeError("Секретна помилка бази даних"), {"request": req})
+        self.assertEqual(drf_resp.status_code, 500)
+        self.assertEqual(json.loads(drf_resp.content)["detail"], "Внутрішня помилка сервера. Спробуйте пізніше.")
+        self.assertNotIn("Секретна помилка", drf_resp.content.decode("utf-8"))
+
 
 
 

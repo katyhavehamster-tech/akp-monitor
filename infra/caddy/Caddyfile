@@ -1,0 +1,21 @@
+akpmonitor.dev {
+    # Жорстке обмеження розміру тіла запиту на рівні вебсервера (20 МБ)
+    request_body {
+        max_size 20MB
+    }
+
+    # Reverse proxy до Django/Gunicorn
+    reverse_proxy localhost:8000 {
+        header_down -Strict-Transport-Security
+        header_down -Server
+        header_down -X-Powered-By
+    }
+
+    # OWASP: HSTS з preload (єдине канонічне джерело)
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+    # Приховання технологічного стеку
+    header -Server
+    header -X-Powered-By
+    header -Via
+}

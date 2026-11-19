@@ -934,7 +934,7 @@ function EvidencePanel({ m, period, onDone }: { m: Any; period: string; onDone: 
                 onChange={setFile}
               />
               <span className="muted" style={{ fontSize: '0.75rem', marginTop: 3 }}>
-                Дозволені формати: PDF, DOCX, XLSX, PNG, JPG/JPEG (до 15 МБ)
+                Дозволені формати: PDF, DOCX, XLSX, PNG, JPG/JPEG (до 20 МБ)
               </span>
             </div>
           </div>

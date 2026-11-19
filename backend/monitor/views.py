@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 import re
 import zipfile
 from collections import Counter
@@ -18,7 +19,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator
 from django.db import transaction
 from django.db.models import Q
-from django.http import FileResponse, HttpResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -32,6 +33,9 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import exception_handler as drf_exception_handler
+
+logger = logging.getLogger("akp.security")
 
 from . import rules as R
 from .access import (AUDIT, CONTENT_EDIT, MEASURE_MANAGE, SURVEYS, SURVEYS_EDIT, SURVEYS_VIEW,
@@ -51,7 +55,7 @@ BLOCKED_EVIDENCE_EXTS = {
     ".docm", ".xlsm", ".pptm", ".exe", ".sh", ".js", ".svg", ".html",
     ".htm", ".bat", ".cmd", ".vbs", ".ps1", ".jar", ".msi", ".dll", ".scr",
 }
-MAX_EVIDENCE_BYTES = 15 * 1024 * 1024
+MAX_EVIDENCE_BYTES = 20 * 1024 * 1024
 LOGIN_WINDOW_SEC = 60
 LOGIN_MAX_USER_FAILS = 10
 LOGIN_MAX_IP_FAILS = 30
@@ -1028,7 +1032,7 @@ def evidence_add(request, code):
     h = hashlib.sha256()
     if f:
         if f.size > MAX_EVIDENCE_BYTES:
-            raise ValidationError({"file": "Розмір файлу не має перевищувати 15 МБ."})
+            raise ValidationError({"file": "Розмір файлу не повинен перевищувати 20 МБ."})
         ext = Path(str(f.name or "")).suffix.lower()
         if ext in BLOCKED_EVIDENCE_EXTS:
             raise ValidationError({"file": f"Файли типу {ext} (виконувані файли, скрипти та файли з макросами) суворо заборонені з міркувань кібербезпеки."})
@@ -1996,3 +2000,35 @@ def system_health(request):
         "today": SystemSettings.today(),
         "external_services": "не використовуються",
     })
+
+
+def custom_exception_handler(exc, context):
+    """Уніфікований JSON-обробник винятків DRF без витоку стектрейсів (OWASP Top 10 A05)."""
+    response = drf_exception_handler(exc, context)
+    if response is None:
+        logger.error("Неперехоплений виняток сервера: %s", exc, exc_info=True)
+        return JsonResponse(
+            {"detail": "Внутрішня помилка сервера. Спробуйте пізніше."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return response
+
+
+def custom_400(request, exception=None):
+    return JsonResponse({"detail": "Некоректний запит."}, status=400)
+
+
+def custom_403(request, exception=None):
+    return JsonResponse({"detail": "Доступ заборонено."}, status=403)
+
+
+def custom_404(request, exception=None):
+    if not request.path.startswith("/api/"):
+        from config.urls import spa
+        return spa(request)
+    return JsonResponse({"detail": "Запитуваний ресурс не знайдено."}, status=404)
+
+
+def custom_500(request):
+    logger.error("HTTP 500 error on path %s", getattr(request, "path", ""))
+    return JsonResponse({"detail": "Внутрішня помилка сервера. Спробуйте пізніше."}, status=500)

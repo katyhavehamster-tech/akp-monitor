@@ -10,7 +10,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-insecure-key-change-me")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+DEBUG = os.environ.get("DJANGO_DEBUG", "0").lower() in ("1", "true", "yes")
 ALLOWED_HOSTS = [
     h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1],testserver").split(",")
     if h.strip()
@@ -109,8 +109,8 @@ WHITENOISE_ROOT = FRONTEND_DIST if FRONTEND_DIST.exists() else None
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
-FILE_UPLOAD_MAX_MEMORY_SIZE = 15 * 1024 * 1024
-DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 
 # Безпекові параметри HTTP та сесій
 X_FRAME_OPTIONS = "DENY"
@@ -142,6 +142,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "monitor.views.custom_exception_handler",
     # параметр ?format= використовуємо для експорту (xlsx/csv/docx), а не для вибору рендерера DRF
     "URL_FORMAT_OVERRIDE": None,
 }
