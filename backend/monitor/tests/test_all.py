@@ -502,5 +502,34 @@ class ReportVerification(Base):
         # 6. Перевірка цілісності ланцюжка SHA-256 після всіх операцій
         self.assertTrue(AuditLog.verify_chain()["ok"])
 
+    def test_analyst_watermark_and_footprint(self):
+        """Перевірка персоналізованого сліду для ролі ANAL та його відсутності для інших ролей."""
+        c_anal = self.client_for("u-005")
+        c_koord = self.client_for("u-002")
+
+        # 1. Експорт звіту аналітиком ANAL містить персоналізований цифровий слід
+        r_anal_xlsx = c_anal.get("/api/reports/portal?year=2026&half=1&format=xlsx")
+        self.assertEqual(r_anal_xlsx.status_code, 200)
+        self.assertIn("X-Digital-Footprint", r_anal_xlsx.headers)
+        self.assertTrue(r_anal_xlsx.headers["X-Digital-Footprint"].startswith("ANAL · U-005"))
+
+        r_anal_docx = c_anal.get("/api/reports/portal?year=2026&half=1&format=docx")
+        self.assertEqual(r_anal_docx.status_code, 200)
+        self.assertIn("X-Digital-Footprint", r_anal_docx.headers)
+        self.assertTrue(r_anal_docx.headers["X-Digital-Footprint"].startswith("ANAL · U-005"))
+
+        # Перевірка наявності колонтитула в самому Word-документі аналітика
+        import io
+        from docx import Document
+        doc = Document(io.BytesIO(r_anal_docx.content))
+        foot_texts = [p.text for s in doc.sections for p in s.footer.paragraphs]
+        self.assertTrue(any("ANAL · U-005" in t for t in foot_texts))
+
+        # 2. Експорт уповноваженим KOORD НЕ містить цифрового сліду ANAL
+        r_koord_xlsx = c_koord.get("/api/reports/portal?year=2026&half=1&format=xlsx")
+        self.assertEqual(r_koord_xlsx.status_code, 200)
+        self.assertNotIn("X-Digital-Footprint", r_koord_xlsx.headers)
+
+
 
 

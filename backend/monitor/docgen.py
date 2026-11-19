@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date
+from datetime import date, datetime
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
@@ -23,7 +23,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Mm, Pt
+from docx.shared import Mm, Pt, RGBColor
 
 FONT = "Times New Roman"
 TEXT_PT = 14
@@ -93,6 +93,34 @@ def _page_numbers(sec):
             el.set(qn("xml:space"), "preserve")
             el.text = text
         run._r.append(el)
+
+
+def apply_analyst_watermark(doc: Document, user_profile=None):
+    """Додає колонтитул з персоналізованим цифровим слідом аналітика ANAL на сторінки документа."""
+    if not user_profile or getattr(user_profile, "role", None) != "ANAL":
+        return
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+    u_code = getattr(user_profile, "code", "ANAL")
+    stamp = f"ANAL · {u_code} · {now_str} · ІзОД / ДСК · Персоналізований цифровий слід"
+    for sec in doc.sections:
+        foot = sec.footer
+        p = foot.paragraphs[0] if foot.paragraphs else foot.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r = p.add_run(stamp)
+        r.font.name = FONT
+        r.font.size = Pt(8.5)
+        r.font.italic = True
+        r.font.color.rgb = RGBColor(110, 110, 110)
+
+        if sec.different_first_page_header_footer:
+            f_foot = sec.first_page_footer
+            p_f = f_foot.paragraphs[0] if f_foot.paragraphs else f_foot.add_paragraph()
+            p_f.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r_f = p_f.add_run(stamp)
+            r_f.font.name = FONT
+            r_f.font.size = Pt(8.5)
+            r_f.font.italic = True
+            r_f.font.color.rgb = RGBColor(110, 110, 110)
 
 
 def _runs(p, text: str, size=None, bold=None, italic=None):

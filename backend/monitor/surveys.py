@@ -316,7 +316,18 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     u_code = user_profile.code if user_profile else "SYS"
     u_role = user_profile.role if user_profile else "ANAL"
-    wm_text = f"ІзОД / ДСК · Сформовано: {u_code} ({u_role}) · {now_str} · Контроль поширення"
+    is_anal = bool(user_profile and getattr(user_profile, "role", None) == "ANAL")
+
+    if is_anal:
+        wm_text = f"ANAL · {u_code} · {now_str} · ІзОД / ДСК · Персоналізований цифровий слід"
+        ws1.oddHeader.right.text = f"ANAL · {u_code} · {now_str} · ДСК"
+        ws1.oddFooter.right.text = f"Вивантажено: ANAL · {u_code} · {now_str}"
+        ws1.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ · ІзОД"
+        ws2.oddHeader.right.text = f"ANAL · {u_code} · {now_str} · ДСК"
+        ws2.oddFooter.right.text = f"Вивантажено: ANAL · {u_code} · {now_str}"
+        ws2.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ · ІзОД"
+    else:
+        wm_text = f"Сформовано: {u_code} ({u_role}) · {now_str}"
 
     ws1.append([wm_text])
     ws1.merge_cells("A1:E1")
@@ -444,7 +455,13 @@ def survey_docx(res: dict, user_profile=None) -> bytes:
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     u_code = user_profile.code if user_profile else "SYS"
     u_role = user_profile.role if user_profile else "ANAL"
-    wm_line = f"ІзОД / ДСК · Захист від витоку · Сформовано: {u_code} ({u_role}) · {now_str}"
+    is_anal = bool(user_profile and getattr(user_profile, "role", None) == "ANAL")
+
+    if is_anal:
+        wm_line = f"ANAL · {u_code} · {now_str} · ІзОД / ДСК · Захист від витоку"
+        D.apply_analyst_watermark(doc, user_profile)
+    else:
+        wm_line = f"Сформовано: {u_code} ({u_role}) · {now_str}"
 
     D.para(doc, "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ", indent=False, align="right", bold=True, size=10)
     D.para(doc, wm_line, indent=False, align="right", italic=True, size=8.5)

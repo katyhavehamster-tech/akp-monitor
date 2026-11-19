@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../auth'
 
 export function Watermark() {
   const { profile } = useAuth()
+  const loc = useLocation()
   const [time, setTime] = useState('')
 
   useEffect(() => {
@@ -16,9 +18,17 @@ export function Watermark() {
     return () => clearInterval(timer)
   }, [])
 
-  if (!profile) return null
+  // 1. Водяний знак відображається виключно для ролі «Аналітик» (ANAL)
+  if (!profile || profile.role !== 'ANAL') return null
 
-  const text = `ІзОД / ДСК · ${profile.code} · ${profile.role} · ${time}`
+  // 2. Лише на сторінках перегляду аналітичних документів, опитувань та звітів
+  const isDocumentOrReport =
+    loc.pathname.startsWith('/surveys') ||
+    loc.pathname.startsWith('/program/reports')
+
+  if (!isDocumentOrReport) return null
+
+  const text = `ІзОД / ДСК · ${profile.code} · ANAL · ${time}`
 
   return (
     <div className="watermark-overlay" aria-hidden="true">

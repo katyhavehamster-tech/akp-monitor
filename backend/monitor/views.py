@@ -6,7 +6,7 @@ import hashlib
 import io
 import re
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from django.conf import settings
@@ -765,7 +765,9 @@ def evidence_file(request, code):
     except OSError:
         return Response({"detail": "Файл підтвердження не знайдено на диску."}, status=404)
     fname = Path(e.file.name).name
-    if SystemSettings.is_izod_active():
+    is_anal = bool(p and p.role == Role.ANAL)
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+    if SystemSettings.is_izod_active() or is_anal:
         AuditLog.write(
             p,
             "завантаження підтвердного документа",
@@ -775,9 +777,36 @@ def evidence_file(request, code):
             old="",
             new=f"Файл: {fname} (захід {e.measure.code}, SHA-256: {e.sha256[:12]}…)",
         )
+
+    # Якщо завантажує ANAL і файл є документом Word (.docx) — вбудовуємо персоналізований цифровий слід
+    if is_anal and fname.lower().endswith(".docx"):
+        try:
+            from docx import Document
+            from . import docgen as D
+            raw_data = fh.read()
+            fh.close()
+            doc = Document(io.BytesIO(raw_data))
+            D.apply_analyst_watermark(doc, p)
+            out_buf = io.BytesIO()
+            doc.save(out_buf)
+            resp = HttpResponse(
+                out_buf.getvalue(),
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+            resp["X-Content-Type-Options"] = "nosniff"
+            resp["X-Digital-Footprint"] = f"ANAL · {p.code} · {now_str}"
+            resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {p.code} · {now_str}"
+            return resp
+        except Exception:
+            fh = e.file.open("rb")
+
     resp = FileResponse(fh, as_attachment=True, filename=fname)
     resp["X-Content-Type-Options"] = "nosniff"
     resp["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    if is_anal:
+        resp["X-Digital-Footprint"] = f"ANAL · {p.code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {p.code} · {now_str}"
     return resp
 
 
@@ -974,12 +1003,20 @@ def recommendation_decide(request, pk):
 
 
 # ---------------------------------------------------------------- звіти й експорт
-def _xlsx_response(filename, sheets):
+def _xlsx_response(filename, sheets, user_profile=None):
     wb = Workbook()
     wb.remove(wb.active)
     head_fill = PatternFill("solid", fgColor="0B2A5B")
+    is_anal = bool(user_profile and getattr(user_profile, "role", None) == Role.ANAL)
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+    stamp = f"ANAL · {user_profile.code} · {now_str}" if is_anal else ""
+
     for title, header, data in sheets:
         ws = wb.create_sheet(title[:31])
+        if is_anal:
+            ws.oddHeader.right.text = f"{stamp} · ДСК"
+            ws.oddFooter.right.text = f"Вивантажено: {stamp} · ІзОД"
+            ws.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ"
         ws.append(header)
         for c in ws[1]:
             c.font = Font(name="Times New Roman", size=12, bold=True, color="FFFFFF")
@@ -1000,22 +1037,37 @@ def _xlsx_response(filename, sheets):
     resp = HttpResponse(buf.getvalue(),
                         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if is_anal:
+        resp["X-Digital-Footprint"] = stamp
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · {stamp}"
     return resp
 
 
-def _docx_response(filename, content: bytes):
+def _docx_response(filename, content: bytes, user_profile=None):
     resp = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if user_profile and getattr(user_profile, "role", None) == Role.ANAL:
+        now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+        resp["X-Digital-Footprint"] = f"ANAL · {user_profile.code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {user_profile.code} · {now_str}"
     return resp
 
 
-def _csv_response(filename, header, data):
+def _csv_response(filename, header, data, user_profile=None):
     buf = io.StringIO()
     w = csv.writer(buf)
+    is_anal = bool(user_profile and getattr(user_profile, "role", None) == Role.ANAL)
+    if is_anal:
+        now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+        w.writerow([f"# ANAL · {user_profile.code} · {now_str} · ІзОД / ДСК"])
     w.writerow([_sanitize_export_cell(h) for h in header])
     w.writerows([[_sanitize_export_cell(v) for v in row] for row in data])
     resp = HttpResponse("\ufeff" + buf.getvalue(), content_type="text/csv; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if is_anal:
+        now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+        resp["X-Digital-Footprint"] = f"ANAL · {user_profile.code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {user_profile.code} · {now_str}"
     return resp
 
 
@@ -1050,7 +1102,7 @@ def report_portal(request):
                 new=f"Word (.docx) за {half} півріччя {year} р.",
             )
         from .reports_docx import portal_docx
-        return _docx_response(fname + ".docx", portal_docx(year, half, user_profile=user_p, base_url=base_url))
+        return _docx_response(fname + ".docx", portal_docx(year, half, user_profile=user_p, base_url=base_url), user_profile=user_p)
     if fmt == "csv":
         if SystemSettings.is_izod_active():
             AuditLog.write(
@@ -1062,7 +1114,7 @@ def report_portal(request):
                 old="",
                 new=f"CSV (.csv) за {half} півріччя {year} р.",
             )
-        return _csv_response(fname + ".csv", keys, [[r[k] for k in keys] for r in rows])
+        return _csv_response(fname + ".csv", keys, [[r[k] for k in keys] for r in rows], user_profile=user_p)
     if fmt == "xlsx":
         if SystemSettings.is_izod_active():
             AuditLog.write(
@@ -1078,7 +1130,7 @@ def report_portal(request):
         for sec in Section.objects.filter(program=pr):
             data = [[r[k] for k in keys] for r in rows if r["rozdil_portal"] == sec.portal_name]
             sheets.append((f"Розділ {sec.number}", names, data))
-        return _xlsx_response(fname + ".xlsx", sheets)
+        return _xlsx_response(fname + ".xlsx", sheets, user_profile=user_p)
     sig1, sig2 = SystemSettings.signatories()
     return Response({
         "program": pr.name, "organ": pr.organ.name, "restricted_info": pr.restricted_info,
@@ -1244,22 +1296,24 @@ def report_internal(request):
             new=f"Внутрішній звіт ({fmt.upper()}) за {period.code}",
         )
     if fmt == "csv":
-        return _csv_response(f"vnutrishnii_zvit_{period.code}.csv", header, data)
+        return _csv_response(f"vnutrishnii_zvit_{period.code}.csv", header, data, user_profile=p)
     flag_rows = [[f["code"], f["title"], f["object"], f["id"], f.get("unit") or "", f["explanation"], f["rule"]]
                  for f in fl]
     return _xlsx_response(f"vnutrishnii_zvit_{period.code}.xlsx", [
         ("Заходи", header, data),
-        ("Сигнали", ["Код", "Сигнал", "Обʼєкт", "ID", "Підрозділ", "Пояснення", "Правило"], flag_rows)])
+        ("Сигнали", ["Код", "Сигнал", "Обʼєкт", "ID", "Підрозділ", "Пояснення", "Правило"], flag_rows)],
+        user_profile=p)
 
 
 @api_view(["GET"])
 def report_note(request):
     require(request, VIEW_ALL)
     period = get_period(request)
+    p = profile(request)
     if request.query_params.get("format") == "docx":
         if SystemSettings.is_izod_active():
             AuditLog.write(
-                profile(request),
+                p,
                 "експорт аналітичної довідки Word",
                 "dovidka",
                 f"note_{period.code}",
@@ -1268,7 +1322,7 @@ def report_note(request):
                 new=f"Аналітична довідка (.docx) за {period.code}",
             )
         from .reports_docx import note_docx
-        return _docx_response(f"analitychna_dovidka_{period.code}.docx", note_docx(period))
+        return _docx_response(f"analitychna_dovidka_{period.code}.docx", note_docx(period, user_profile=p), user_profile=p)
     note = R.analytic_note(period)
     sig1, sig2 = SystemSettings.signatories()
     note["signatory_name"] = sig1
@@ -1455,13 +1509,17 @@ def survey_compare(request):
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         resp["Content-Disposition"] = f'attachment; filename="porivniannia_opytuvan_{a.id}_vs_{b.id}.xlsx"'
+        if p and p.role == Role.ANAL:
+            now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+            resp["X-Digital-Footprint"] = f"ANAL · {p.code} · {now_str}"
+            resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {p.code} · {now_str}"
         return resp
 
     if fmt == "docx":
         if SystemSettings.is_izod_active():
             AuditLog.write(p, "експорт результатів опитування Word (ДСТУ 4163:2020)", "opytuvannia", f"{a.id}_{b.id}")
         from .surveys import survey_docx
-        return _docx_response(f"analitychnyi_zvit_opytuvannia_{a.id}_vs_{b.id}.docx", survey_docx(res, p))
+        return _docx_response(f"analitychnyi_zvit_opytuvannia_{a.id}_vs_{b.id}.docx", survey_docx(res, p), user_profile=p)
 
     if SystemSettings.is_izod_active():
         AuditLog.write(
