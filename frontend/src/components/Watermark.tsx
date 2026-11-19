@@ -21,12 +21,8 @@ export function Watermark() {
   // 1. Водяний знак відображається виключно для ролі «Аналітик» (ANAL)
   if (!profile || profile.role !== 'ANAL') return null
 
-  // 2. Лише на сторінках перегляду аналітичних документів, опитувань та звітів
-  const isDocumentOrReport =
-    loc.pathname.startsWith('/surveys') ||
-    loc.pathname.startsWith('/program/reports')
-
-  if (!isDocumentOrReport) return null
+  // 2. Екранний водяний знак залишається ТІЛЬКИ на сторінці «Опитування» (/surveys)
+  if (!loc.pathname.startsWith('/surveys')) return null
 
   const text = `ІзОД / ДСК · ${profile.code} · ANAL · ${time}`
 
