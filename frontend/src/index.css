@@ -819,7 +819,13 @@ textarea { min-height: 110px; resize: vertical; }
   display: grid;
   place-items: center;
   padding: 2.5rem 1.25rem;
-  background: radial-gradient(1200px 420px at 50% -100px, var(--accent-bg), transparent 70%), var(--bg);
+  background: radial-gradient(1100px 520px at 50% -70px, rgba(59, 130, 246, 0.28) 0%, rgba(96, 165, 250, 0.18) 35%, rgba(191, 219, 254, 0.12) 65%, transparent 85%), var(--bg);
+  position: relative;
+  overflow-x: hidden;
+}
+
+:root.dark .login {
+  background: radial-gradient(1200px 480px at 50% -80px, rgba(99, 102, 241, 0.22) 0%, rgba(59, 130, 246, 0.16) 40%, transparent 75%), var(--bg);
 }
 .login .box { width: min(480px, 100%); }
 .login .head { display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; }
@@ -2176,8 +2182,9 @@ textarea { min-height: 110px; resize: vertical; }
 .public-portal-brand {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   min-width: 0;
+  flex: 1 1 auto;
 }
 .public-portal-brand-text {
   display: flex;
@@ -2187,11 +2194,15 @@ textarea { min-height: 110px; resize: vertical; }
 .public-portal-brand-title {
   display: flex;
   align-items: center;
-  gap: .4rem;
+  gap: .35rem;
   font-size: 1.02rem;
   font-weight: 700;
   color: var(--ink);
   line-height: 1.25;
+  white-space: nowrap;
+}
+.public-portal-brand-name {
+  white-space: nowrap;
 }
 .public-portal-brand-sub {
   font-size: .78rem;
@@ -2204,8 +2215,14 @@ textarea { min-height: 110px; resize: vertical; }
 .public-portal-header-tools {
   display: flex;
   align-items: center;
-  gap: .5rem;
+  gap: .4rem;
   flex-shrink: 0;
+}
+.public-portal-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  white-space: nowrap;
 }
 .public-portal-main {
   flex: 1 0 auto;
@@ -2229,8 +2246,11 @@ textarea { min-height: 110px; resize: vertical; }
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+.public-portal-hero-text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .public-portal-hero-kicker {
   font-size: .75rem;
@@ -2254,24 +2274,45 @@ textarea { min-height: 110px; resize: vertical; }
   color: var(--muted);
   max-width: 820px;
 }
-.public-portal-period-badge {
-  padding: .5rem .85rem;
-  border-radius: var(--radius-sm);
+.public-portal-period-widget {
+  display: inline-flex;
+  flex-direction: column;
+  gap: .35rem;
   background: var(--surface-2);
   border: 1px solid var(--line);
-  text-align: right;
+  border-radius: var(--radius-sm);
+  padding: .5rem .75rem;
   flex-shrink: 0;
+  min-width: 185px;
 }
-.public-portal-period-label {
-  font-size: .72rem;
+.public-portal-period-widget-label {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .74rem;
   text-transform: uppercase;
+  letter-spacing: .04em;
   color: var(--muted);
   font-weight: 600;
 }
-.public-portal-period-val {
-  font-size: 1.1rem;
+.public-portal-period-icon {
   color: var(--accent);
+}
+.public-portal-period-select-wrap {
+  width: 100%;
+}
+.public-portal-period-select {
+  width: 100%;
+  height: 32px;
+  line-height: 30px;
+  padding: 0 1.8rem 0 .55rem;
+  font-size: .88rem;
   font-weight: 700;
+  color: var(--accent);
+  background-color: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 /* Статистика */
@@ -2304,6 +2345,8 @@ textarea { min-height: 110px; resize: vertical; }
 .public-portal-stat-box.ok .public-portal-stat-num { color: var(--ok); }
 .public-portal-stat-box.progress .public-portal-stat-lbl { color: var(--accent); }
 .public-portal-stat-box.progress .public-portal-stat-num { color: var(--accent); }
+.public-portal-stat-box.bad .public-portal-stat-lbl { color: var(--bad); }
+.public-portal-stat-box.bad .public-portal-stat-num { color: var(--bad); }
 
 /* Фільтри */
 .public-portal-filters {
@@ -2320,22 +2363,31 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .public-portal-search-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
   flex: 1 1 240px;
   min-width: 180px;
 }
-.public-portal-search-wrap input {
+.public-portal-search-wrap input,
+.public-portal-search-input {
   width: 100%;
-  padding-left: 32px;
-  padding-right: 30px;
+  height: 38px;
+  line-height: 38px;
+  padding: 0 32px 0 36px;
   font-size: .88rem;
+  display: block;
+  box-sizing: border-box;
 }
 .public-portal-search-icon {
   position: absolute;
-  left: 10px;
+  left: 11px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--muted);
   pointer-events: none;
+  width: 15px;
+  height: 15px;
+  display: block;
 }
 .public-portal-search-clear {
   position: absolute;
@@ -2347,6 +2399,9 @@ textarea { min-height: 110px; resize: vertical; }
   color: var(--muted);
   cursor: pointer;
   padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .public-portal-filter-select {
   flex: 0 1 190px;
@@ -2480,7 +2535,7 @@ textarea { min-height: 110px; resize: vertical; }
   margin-top: auto;
   background: var(--surface);
   border-top: 1px solid var(--line);
-  padding: 1.25rem 1rem;
+  padding: 1.5rem 1rem 1.75rem;
   font-size: .82rem;
   color: var(--muted);
 }
@@ -2488,10 +2543,67 @@ textarea { min-height: 110px; resize: vertical; }
   max-width: 1240px;
   margin: 0 auto;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
+  text-align: center;
+  gap: 1.1rem;
+}
+.public-portal-footer-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: .35rem .6rem;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.4;
+  max-width: 900px;
+}
+.public-portal-footer-brand {
+  font-weight: 700;
+  color: var(--ink);
+}
+.public-portal-footer-sep {
+  color: var(--line-strong);
+}
+.public-portal-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: .65rem;
+}
+.public-portal-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .44rem .95rem;
+  border-radius: 9999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: .82rem;
+  font-weight: 500;
+  text-decoration: none !important;
+  transition: all .15s var(--ease);
+  box-shadow: 0 1px 2px rgba(10, 37, 64, .04);
+}
+.public-portal-footer-btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(10, 37, 64, .08);
+}
+.public-portal-footer-btn.primary {
+  background: var(--accent-bg);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.public-portal-footer-btn.primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 /* Адаптивність публічного порталу для планшетів та смартфонів */
@@ -2500,6 +2612,9 @@ textarea { min-height: 110px; resize: vertical; }
     padding: .5rem .85rem;
   }
   .public-portal-brand-sub {
+    display: none !important;
+  }
+  .public-portal-pill-desktop {
     display: none !important;
   }
   .public-portal-main {
@@ -2516,14 +2631,30 @@ textarea { min-height: 110px; resize: vertical; }
   }
 }
 
+@media (max-width: 580px) {
+  .public-portal-btn-label-extra {
+    display: none !important;
+  }
+  .public-portal-hero-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .85rem;
+  }
+  .public-portal-period-widget {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+}
+
 @media (max-width: 480px) {
   .public-portal-header-inner {
     padding: .45rem .6rem;
-    gap: .4rem;
+    gap: .35rem;
   }
   .public-portal-brand .logo {
-    width: 32px !important;
-    height: 32px !important;
+    width: 30px !important;
+    height: 30px !important;
   }
   .public-portal-brand-title {
     font-size: .92rem;
@@ -2532,7 +2663,7 @@ textarea { min-height: 110px; resize: vertical; }
     display: none !important;
   }
   .public-portal-header-tools .btn {
-    padding: .28rem .5rem !important;
+    padding: .28rem .45rem !important;
     font-size: .78rem !important;
   }
   .public-portal-main {
@@ -2555,6 +2686,10 @@ textarea { min-height: 110px; resize: vertical; }
     flex: 1 1 100%;
     min-width: 0;
   }
+  .public-portal-search-wrap input,
+  .public-portal-search-input {
+    padding-left: 36px !important;
+  }
   .public-portal-count {
     margin-left: 0;
     text-align: right;
@@ -2574,14 +2709,24 @@ textarea { min-height: 110px; resize: vertical; }
   }
 }
 
+/* Екрани менше 360px */
+@media (max-width: 360px) {
+  .public-portal-tool-btn .public-portal-btn-label {
+    display: none !important;
+  }
+  .public-portal-tool-btn {
+    padding: .26rem .45rem !important;
+  }
+}
+
 /* Надвузькі екрани менше ніж 320px (240px–320px) */
 @media (max-width: 320px) {
   .public-portal-header-inner {
-    padding: .35rem .45rem;
-    gap: .3rem;
+    padding: .35rem .4rem;
+    gap: .25rem;
   }
   .public-portal-brand {
-    gap: .4rem;
+    gap: .35rem;
   }
   .public-portal-brand .logo {
     width: 26px !important;
@@ -2589,22 +2734,22 @@ textarea { min-height: 110px; resize: vertical; }
   }
   .public-portal-brand-title {
     font-size: .84rem;
-    gap: .25rem;
+    gap: .2rem;
   }
   .public-portal-brand-title .brand-badge {
     display: none !important;
   }
   .public-portal-header-tools {
-    gap: .25rem;
+    gap: .2rem;
   }
   .public-portal-header-tools .btn {
-    padding: .22rem .35rem !important;
+    padding: .22rem .32rem !important;
     font-size: .72rem !important;
     min-width: 0;
   }
   .public-portal-header-tools .btn svg {
-    width: 13px !important;
-    height: 13px !important;
+    width: 14px !important;
+    height: 14px !important;
   }
   .public-portal-main {
     padding: .6rem .35rem 1.75rem;
@@ -2619,15 +2764,17 @@ textarea { min-height: 110px; resize: vertical; }
   .public-portal-hero-desc {
     font-size: .82rem;
   }
-  .public-portal-period-badge {
-    padding: .35rem .6rem;
+  .public-portal-period-widget {
+    padding: .4rem .55rem;
   }
-  .public-portal-period-val {
-    font-size: .95rem;
+  .public-portal-period-select {
+    height: 28px;
+    line-height: 26px;
+    font-size: .8rem;
   }
   .public-portal-stats {
-    grid-template-columns: 1fr;
-    gap: .5rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: .45rem;
   }
   .public-portal-stat-box {
     padding: .5rem .65rem;
@@ -2640,9 +2787,14 @@ textarea { min-height: 110px; resize: vertical; }
     gap: .5rem;
   }
   .public-portal-search-wrap input,
+  .public-portal-search-input,
   .public-portal-filter-select {
     font-size: .8rem;
     padding: .35rem .5rem;
+  }
+  .public-portal-search-wrap input,
+  .public-portal-search-input {
+    padding-left: 34px !important;
   }
   .public-portal-card {
     padding: .75rem .55rem;
@@ -2684,7 +2836,13 @@ textarea { min-height: 110px; resize: vertical; }
     gap: .25rem;
   }
   .public-portal-footer {
-    padding: 1rem .5rem;
+    padding: 1.25rem .5rem;
     font-size: .75rem;
+  }
+  .public-portal-footer-btn {
+    width: 100%;
+    justify-content: center;
+    font-size: .78rem;
+    padding: .4rem .6rem;
   }
 }

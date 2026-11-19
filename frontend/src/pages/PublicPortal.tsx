@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  FileCheck, LogIn, Moon, Search, ShieldCheck, Sun, X,
+  CalendarDays, FileCheck, LogIn, Moon, Search, ShieldCheck, Sun, X,
 } from 'lucide-react'
 import { api, fmtDate, num, type Any } from '../api'
 import { Emblem, useTheme } from '../components/Layout'
@@ -13,6 +13,7 @@ export default function PublicPortal() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
 
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('')
   const [q, setQ] = useState('')
   const [sectionFilter, setSectionFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -20,9 +21,15 @@ export default function PublicPortal() {
   useEffect(() => {
     let active = true
     setLoading(true)
-    api<Any>('public/measures')
+    const qp = selectedPeriod ? `?period=${encodeURIComponent(selectedPeriod)}` : ''
+    api<Any>(`public/measures${qp}`)
       .then(res => {
-        if (active) setData(res)
+        if (active) {
+          setData(res)
+          if (!selectedPeriod && res?.period) {
+            setSelectedPeriod(res.period)
+          }
+        }
       })
       .catch(e => {
         if (active) setErr((e as Error).message || 'Помилка завантаження даних публічного порталу.')
@@ -33,7 +40,7 @@ export default function PublicPortal() {
     return () => {
       active = false
     }
-  }, [])
+  }, [selectedPeriod])
 
   const items: Any[] = useMemo(() => data?.items || [], [data])
 
@@ -42,7 +49,8 @@ export default function PublicPortal() {
     const done = items.filter(i => i.status === 'vykonano').length
     const inProgress = items.filter(i => ['v_roboti', 'chastkovo'].includes(i.status)).length
     const notDue = items.filter(i => i.status === 'ne_rozpochato').length
-    return { total, done, inProgress, notDue }
+    const failed = items.filter(i => i.status === 'ne_vykonano').length
+    return { total, done, inProgress, notDue, failed }
   }, [items])
 
   const filteredItems = useMemo(() => {
@@ -74,12 +82,12 @@ export default function PublicPortal() {
       <header className="public-portal-header">
         <div className="public-portal-header-inner">
           <div className="public-portal-brand">
-            <Emblem size={38} className="public-portal-logo" />
+            <Emblem size={36} className="public-portal-logo" />
             <div className="public-portal-brand-text">
               <div className="public-portal-brand-title">
-                <span>АКП-Монітор</span>
+                <span className="public-portal-brand-name">АКП-Монітор</span>
                 <span className="brand-badge">ХНУВС</span>
-                <span className="pill ok" style={{ fontSize: '.72rem', padding: '1px 7px' }}>
+                <span className="pill ok public-portal-pill-desktop">
                   Публічний портал
                 </span>
               </div>
@@ -92,30 +100,34 @@ export default function PublicPortal() {
           <div className="public-portal-header-tools">
             <Link
               to="/verify"
-              className="btn secondary small"
+              className="btn secondary small public-portal-tool-btn"
               title="Перевірка електронного зліпка звіту НАЗК за ДСТУ 4163:2020"
+              aria-label="Верифікація звіту"
             >
-              <ShieldCheck size={14} />
-              <span>Верифікація звіту</span>
+              <ShieldCheck size={15} className="public-portal-tool-icon" />
+              <span className="public-portal-btn-label">
+                Верифікація<span className="public-portal-btn-label-extra"> звіту</span>
+              </span>
             </Link>
 
             <Link
               to="/login"
-              className="btn primary small"
+              className="btn primary small public-portal-tool-btn"
               title="Вхід до системи для виконавців та координаторів"
+              aria-label="Вхід до кабінету"
             >
-              <LogIn size={14} />
-              <span>Кабінет</span>
+              <LogIn size={15} className="public-portal-tool-icon" />
+              <span className="public-portal-btn-label">Кабінет</span>
             </Link>
 
             <button
               type="button"
-              className="btn secondary small icon"
+              className="btn secondary small icon public-portal-theme-btn"
               onClick={toggleTheme}
               title={theme === 'light' ? 'Увімкнути темну тему' : 'Увімкнути світлу тему'}
               aria-label="Перемкнути тему"
             >
-              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+              {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
             </button>
           </div>
         </div>
@@ -126,7 +138,7 @@ export default function PublicPortal() {
         {/* Hero banner */}
         <div className="public-portal-hero">
           <div className="public-portal-hero-head">
-            <div>
+            <div className="public-portal-hero-text">
               <span className="public-portal-hero-kicker">
                 Громадський контроль та прозорість
               </span>
@@ -138,14 +150,28 @@ export default function PublicPortal() {
                 {data?.program?.approved ? ` Затверджено: ${data.program.approved}.` : ''}
               </p>
             </div>
-            {data?.period && (
-              <div className="public-portal-period-badge">
-                <div className="public-portal-period-label">
-                  Звітний період
-                </div>
-                <div className="public-portal-period-val">{data.period}</div>
+
+            {/* Гарно оформлений інтерактивний блок вибору звітного періоду */}
+            <div className="public-portal-period-widget">
+              <div className="public-portal-period-widget-label">
+                <CalendarDays size={14} className="public-portal-period-icon" />
+                <span>Звітний період</span>
               </div>
-            )}
+              <div className="public-portal-period-select-wrap">
+                <select
+                  className="public-portal-period-select"
+                  value={selectedPeriod || data?.period || ''}
+                  onChange={e => setSelectedPeriod(e.target.value)}
+                  aria-label="Оберіть звітний період"
+                >
+                  {(data?.periods || (data?.period ? [{ code: data.period, quarter: data.period.split('-Q')[1] || 1, year: data.period.split('-')[0] || 2026 }] : [])).map((p: Any) => (
+                    <option key={p.code} value={p.code}>
+                      {p.code} ({p.quarter} кв. {p.year})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Плашки статистики */}
@@ -166,6 +192,10 @@ export default function PublicPortal() {
               <div className="public-portal-stat-box">
                 <div className="public-portal-stat-lbl">Строк не настав</div>
                 <div className="public-portal-stat-num">{stats.notDue}</div>
+              </div>
+              <div className="public-portal-stat-box bad">
+                <div className="public-portal-stat-lbl">Не виконано</div>
+                <div className="public-portal-stat-num">{stats.failed}</div>
               </div>
             </div>
           )}
@@ -207,6 +237,7 @@ export default function PublicPortal() {
                 <Search size={15} className="public-portal-search-icon" />
                 <input
                   type="text"
+                  className="public-portal-search-input"
                   placeholder="Шукати за змістом, кодом або описом виконання…"
                   value={q}
                   onChange={e => setQ(e.target.value)}
@@ -364,15 +395,22 @@ export default function PublicPortal() {
       {/* Підвал порталу */}
       <footer className="public-portal-footer">
         <div className="public-portal-footer-inner">
-          <div>
-            АКП-Монітор · Харківський національний університет внутрішніх справ · Сектор з питань запобігання корупції
+          <div className="public-portal-footer-info">
+            <span className="public-portal-footer-brand">АКП-Монітор</span>
+            <span className="public-portal-footer-sep">·</span>
+            <span>Харківський національний університет внутрішніх справ</span>
+            <span className="public-portal-footer-sep">·</span>
+            <span>Сектор з питань запобігання корупції</span>
           </div>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <Link to="/verify" style={{ color: 'var(--muted)', textDecoration: 'underline' }}>
-              Перевірка автентичності звіту
+
+          <div className="public-portal-footer-actions">
+            <Link to="/verify" className="public-portal-footer-btn" title="Перевірка електронного підпису та зліпка звіту">
+              <ShieldCheck size={14} />
+              <span>Перевірка автентичності звіту</span>
             </Link>
-            <Link to="/login" style={{ color: 'var(--muted)', textDecoration: 'underline' }}>
-              Вхід для уповноважених осіб
+            <Link to="/login" className="public-portal-footer-btn primary" title="Вхід до системи для відповідальних осіб">
+              <LogIn size={14} />
+              <span>Вхід для уповноважених осіб</span>
             </Link>
           </div>
         </div>

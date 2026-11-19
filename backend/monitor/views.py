@@ -311,6 +311,10 @@ def public_measures(request):
         {"code": sec.code, "number": sec.number, "name": sec.portal_name}
         for sec in pr.sections.all()
     ]
+    periods = [
+        {"code": p.code, "year": p.year, "quarter": p.quarter}
+        for p in ReportingPeriod.objects.all().order_by("year", "quarter")
+    ]
     return Response({
         "restricted": False,
         "program": {
@@ -321,6 +325,7 @@ def public_measures(request):
             "approved": pr.approved,
         },
         "period": period.code,
+        "periods": periods,
         "total_measures": len(items),
         "items": items,
         "sections": sections,
