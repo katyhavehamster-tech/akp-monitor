@@ -869,13 +869,12 @@ class OwaspSecurityTests(Base):
         from django.core.files.uploadedfile import SimpleUploadedFile
         c = self.client_for("u-002")
 
-        # Симулюємо файл розміром 21 МБ
+        # Файл розміром 20 МБ + 1 КБ
         oversized = SimpleUploadedFile(
             "large_doc.pdf",
-            b"%PDF-1.4 " + b"0" * 100,
+            b"%PDF-1.4 " + b"0" * (20 * 1024 * 1024 + 1024),
             content_type="application/pdf"
         )
-        oversized.size = 21 * 1024 * 1024  # 21 MB
         r = c.post("/api/measures/Z-01/evidence", {
             "title": "Завеликий файл", "doc_date": "2026-06-01", "file": oversized
         }, format="multipart")
