@@ -700,5 +700,62 @@ class ReportVerification(Base):
             pr.save()
 
 
+class OwaspSecurityTests(Base):
+    def test_login_rate_limiting_and_enumeration(self):
+        client = APIClient()
+        # 1. Неіснуючий логін та невірний пароль повертають ідентичну помилку
+        r1 = client.post("/api/auth/login", {"username": "nonexistent_user", "password": "wrongpassword"}, format="json")
+        self.assertEqual(r1.status_code, 400)
+        self.assertEqual(r1.json()["detail"], "Невірний логін або пароль.")
+
+        r2 = client.post("/api/auth/login", {"username": "u-001", "password": "wrongpassword"}, format="json")
+        self.assertEqual(r2.status_code, 400)
+        self.assertEqual(r2.json()["detail"], "Невірний логін або пароль.")
+
+        # 2. Rate limiting: не більше 10 спроб на хвилину
+        for _ in range(8):
+            client.post("/api/auth/login", {"username": "rate_test_user", "password": "wrong"}, format="json")
+        r_throttle = client.post("/api/auth/login", {"username": "rate_test_user", "password": "wrong"}, format="json")
+        self.assertEqual(r_throttle.status_code, 429)
+        self.assertEqual(r_throttle.json()["detail"], "Забагато спроб входу. Спробуйте пізніше.")
+
+    def test_audit_chain_repair_command(self):
+        # Перевірка команди відновлення ланцюжка
+        res = AuditLog.verify_chain()
+        self.assertTrue(res["ok"])
+        call_command("repair_audit_chain", "--fix")
+        res2 = AuditLog.verify_chain()
+        self.assertTrue(res2["ok"])
+
+    def test_evidence_duplicate_detection(self):
+        c_koord = self.client_for("u-002")
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        f1 = SimpleUploadedFile("report_doc.pdf", b"%PDF-1.4 test document content for duplicate check", content_type="application/pdf")
+        r1 = c_koord.post("/api/measures/Z-01/evidence", {
+            "title": "Звітний документ 1",
+            "doc_date": "2026-03-15",
+            "type": "звіт",
+            "file": f1,
+            "period": "2026-Q1"
+        }, format="multipart")
+        self.assertEqual(r1.status_code, 201)
+        self.assertNotIn("duplicate_warning", r1.json())
+
+        # Завантажуємо ТОЙ САМИЙ файл до іншого заходу (Z-02)
+        f2 = SimpleUploadedFile("report_doc.pdf", b"%PDF-1.4 test document content for duplicate check", content_type="application/pdf")
+        r2 = c_koord.post("/api/measures/Z-02/evidence", {
+            "title": "Звітний документ 2 (дублікат)",
+            "doc_date": "2026-03-15",
+            "type": "звіт",
+            "file": f2,
+            "period": "2026-Q1"
+        }, format="multipart")
+        self.assertEqual(r2.status_code, 201)
+        self.assertIn("duplicate_warning", r2.json())
+        self.assertTrue(r2.json()["is_duplicate"])
+        self.assertTrue(any(d["measure"] == "Z-01" for d in r2.json()["duplicate_in"]))
+
+
+
 
 

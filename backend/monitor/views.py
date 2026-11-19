@@ -46,9 +46,9 @@ ALLOWED_EVIDENCE_EXTS = {
     ".odt", ".ods", ".png", ".jpg", ".jpeg", ".webp", ".zip", ".p7s", ".sig",
 }
 MAX_EVIDENCE_BYTES = 15 * 1024 * 1024
-LOGIN_WINDOW_SEC = 300
+LOGIN_WINDOW_SEC = 60
 LOGIN_MAX_USER_FAILS = 10
-LOGIN_MAX_IP_FAILS = 25
+LOGIN_MAX_IP_FAILS = 30
 _HTTP_URL_VALIDATOR = URLValidator(schemes=["http", "https"])
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 _PURE_NUM_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?$")
@@ -160,11 +160,20 @@ def execution_dict(e: Execution | None):
 
 def evidence_dict(e: Evidence):
     fname = Path(e.file.name).name if e.file else None
+    # Прапорець дубліката: файл із таким SHA-256 прикріплено до іншого заходу
+    is_dup = False
+    dup_measures = []
+    if e.file and e.sha256:
+        dups = Evidence.objects.filter(sha256=e.sha256).exclude(pk=e.pk).exclude(measure=e.measure).select_related("measure")
+        if dups.exists():
+            is_dup = True
+            dup_measures = [{"code": d.code, "measure": d.measure.code} for d in dups[:5]]
     return {"id": e.id, "code": e.code, "type": e.type, "title": e.title, "doc_date": e.doc_date,
             "link": e.link, "file": f"/api/evidence/{e.code}/file" if e.file else None,
             "filename": fname, "uploaded_at": e.uploaded_at,
             "uploaded_by": e.uploaded_by.code if e.uploaded_by else None, "sha256": e.sha256,
-            "period": e.period.code if e.period else None}
+            "period": e.period.code if e.period else None,
+            "is_duplicate": is_dup, "duplicate_in": dup_measures}
 
 
 def measure_brief(s: R.Snap, period, flags_by_m, overdue_units, today):
@@ -342,20 +351,34 @@ def login(request):
     username = (request.data.get("username") or "").strip().lower()[:64]
     password = request.data.get("password") or ""
     ip = _client_ip(request)
-    user_key = f"login_fail:u:{ip}:{username}"
-    ip_key = f"login_fail:ip:{ip}"
-    if cache.get(user_key, 0) >= LOGIN_MAX_USER_FAILS or cache.get(ip_key, 0) >= LOGIN_MAX_IP_FAILS:
+    user_key = f"login_rate:u:{username}" if username else None
+    ip_key = f"login_rate:ip:{ip}"
+
+    user_att = cache.get(user_key, 0) if user_key else 0
+    ip_att = cache.get(ip_key, 0)
+
+    if user_att >= 10 or ip_att >= 10:
         return Response(
-            {"detail": "Забагато невдалих спроб входу. Зачекайте кілька хвилин і спробуйте знову."},
+            {"detail": "Забагато спроб входу. Спробуйте пізніше."},
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
-    u = authenticate(username=username, password=password)
-    if not u or not hasattr(u, "profile"):
-        cache.set(user_key, cache.get(user_key, 0) + 1, LOGIN_WINDOW_SEC)
-        cache.set(ip_key, cache.get(ip_key, 0) + 1, LOGIN_WINDOW_SEC)
+
+    # Фіксуємо спробу запиту (вікно 60 секунд — не більше 10 на хвилину)
+    cache.set(ip_key, ip_att + 1, 60)
+    if user_key:
+        cache.set(user_key, user_att + 1, 60)
+
+    if not username or not password:
         AuditLog.write(None, "невдала спроба входу", "korystuvach", (username or "unknown")[:30])
         return Response({"detail": "Невірний логін або пароль."}, status=400)
-    cache.delete(user_key)
+
+    u = authenticate(username=username, password=password)
+    if not u or not hasattr(u, "profile"):
+        AuditLog.write(None, "невдала спроба входу", "korystuvach", (username or "unknown")[:30])
+        return Response({"detail": "Невірний логін або пароль."}, status=400)
+
+    if user_key:
+        cache.delete(user_key)
     token, _ = Token.objects.get_or_create(user=u)
     AuditLog.write(u.profile, "вхід у систему", "korystuvach", u.profile.code)
     return Response({
@@ -961,14 +984,30 @@ def evidence_add(request, code):
         code_e = f"E-{n:03d}"
     if not f:
         h.update(f"{code_e}|{m.code}|{title}|{doc_date.isoformat()}".encode("utf-8"))
+    file_sha = h.hexdigest()
+
+    # Детектор дублювання: перевірка чи файл з таким же SHA-256 вже прикріплено до іншого заходу
+    duplicate_warning = None
+    if f:
+        existing_dups = Evidence.objects.filter(sha256=file_sha).exclude(measure=m).select_related("measure")
+        if existing_dups.exists():
+            dup_codes = [f"{d.code} (захід {d.measure.code})" for d in existing_dups[:5]]
+            duplicate_warning = (
+                f"Файл із таким самим SHA-256 вже прикріплено до інших заходів: {', '.join(dup_codes)}. "
+                f"Завантаження дозволено, але перевірте, чи це не помилкове дублювання."
+            )
+
     e = Evidence(code=code_e, measure=m, period=period, type=str(d.get("type") or "документ").strip()[:50],
                  title=title, doc_date=doc_date, link=link,
-                 uploaded_at=timezone.now(), uploaded_by=p, sha256=h.hexdigest())
+                 uploaded_at=timezone.now(), uploaded_by=p, sha256=file_sha)
     if f:
         e.file = f
     e.save()
     AuditLog.write(p, "завантажено підтвердний матеріал", "pidtverdzhennia", e.code, "sha256", "", e.sha256)
-    return Response(evidence_dict(e), status=201)
+    resp = evidence_dict(e)
+    if duplicate_warning:
+        resp["duplicate_warning"] = duplicate_warning
+    return Response(resp, status=201)
 
 
 @api_view(["GET"])

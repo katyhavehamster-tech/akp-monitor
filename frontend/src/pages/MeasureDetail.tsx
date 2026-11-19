@@ -853,9 +853,11 @@ function EvidencePanel({ m, period, onDone }: { m: Any; period: string; onDone: 
   const [file, setFile] = useState<File | null>(null)
   const [f, setF] = useState<Any>({ type: 'наказ' })
   const [err, setErr] = useState('')
+  const [dupNotice, setDupNotice] = useState('')
   const allowed = m.can_edit_execution.allowed
   const save = async () => {
     setErr('')
+    setDupNotice('')
     const fd = new FormData()
     if (file) fd.append('file', file)
     fd.append('type', f.type)
@@ -864,9 +866,12 @@ function EvidencePanel({ m, period, onDone }: { m: Any; period: string; onDone: 
     fd.append('link', f.link || '')
     fd.append('period', period)
     try {
-      await api(`measures/${m.code}/evidence`, { form: fd, method: 'POST' })
+      const res = await api<Any>(`measures/${m.code}/evidence`, { form: fd, method: 'POST' })
       setFile(null)
       setF({ type: 'наказ' })
+      if (res?.duplicate_warning) {
+        setDupNotice(res.duplicate_warning)
+      }
       onDone()
     } catch (e) {
       setErr((e as Error).message)
@@ -878,8 +883,14 @@ function EvidencePanel({ m, period, onDone }: { m: Any; period: string; onDone: 
         <div key={e.code} className="evidence-item" style={{ marginBottom: '.6rem', paddingBottom: '.6rem', borderBottom: '1px solid var(--line)' }}>
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <b>{e.title}</b>
-              <br />
+              <div className="row" style={{ gap: '.4rem', alignItems: 'center' }}>
+                <b>{e.title}</b>
+                {e.is_duplicate && (
+                  <Pill tone="warn" title={e.duplicate_in?.map((d: Any) => `Доказ ${d.code} у заході ${d.measure}`).join(', ')}>
+                    ⚠️ Дублікат SHA-256 (захід {e.duplicate_in?.map((d: Any) => d.measure).join(', ')})
+                  </Pill>
+                )}
+              </div>
               <small className="muted">
                 {e.type} · від {fmtDate(e.doc_date)} · {e.code}
               </small>
@@ -942,6 +953,7 @@ function EvidencePanel({ m, period, onDone }: { m: Any; period: string; onDone: 
             />
           </label>
           {err && <div className="alert danger">{err}</div>}
+          {dupNotice && <div className="alert warning" style={{ marginBottom: '.5rem' }}>{dupNotice}</div>}
           <button type="button" className="btn secondary" onClick={save}>
             Додати підтвердження
           </button>
