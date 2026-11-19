@@ -272,9 +272,6 @@ export default function PublicPortal() {
                 <div className="public-portal-stat-num">
                   {stats.onTimePct !== null && stats.onTimePct !== undefined ? `${stats.onTimePct}%` : '—'}
                 </div>
-                <div className="public-portal-stat-sub">
-                  {stats.doneOnTime} вчасно · {stats.doneLate} із запізненням
-                </div>
               </div>
               <div className="public-portal-stat-box progress">
                 <div className="public-portal-stat-lbl">У роботі / частково</div>

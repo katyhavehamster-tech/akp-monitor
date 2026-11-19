@@ -1,18 +1,123 @@
 <!doctype html>
-<html lang="uk">
+<html lang="uk" prefix="og: https://ogp.me/ns#">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#004494" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#131316" media="(prefers-color-scheme: dark)" />
-    <meta name="description" content="АКП-Монітор · Цифрова система моніторингу виконання антикорупційної програми ХНУВС" />
+
+    <!-- Базові SEO метатеги -->
+    <title>АКП-Монітор · ХНУВС — Моніторинг виконання антикорупційної програми</title>
+    <meta name="description" content="Офіційний публічний портал та цифрова система моніторингу виконання антикорупційної програми Харківського національного університету внутрішніх справ (ХНУВС) на 2026–2027 роки. Відкритий реєстр заходів, статус виконання, індикатори та громадський контроль." />
+    <meta name="keywords" content="АКП-Монітор, ХНУВС, Антикорупційна програма, Харківський національний університет внутрішніх справ, моніторинг антикорупційної програми, сектор запобігання корупції, реєстр заходів, НАЗК, звітність, громадський контроль, відкритий портал" />
+    <meta name="author" content="Харківський національний університет внутрішніх справ · Сектор з питань запобігання та виявлення корупції" />
+    <meta name="publisher" content="Харківський національний університет внутрішніх справ (ХНУВС)" />
+    <link rel="canonical" href="https://akpmonitor.dev/" />
+
+    <!-- Індексація пошуковими системами -->
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="bingbot" content="index, follow" />
+
+    <!-- Open Graph (Facebook, Telegram, Viber, LinkedIn) -->
+    <meta property="og:locale" content="uk_UA" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="АКП-Монітор · ХНУВС" />
+    <meta property="og:title" content="АКП-Монітор · ХНУВС — Моніторинг виконання антикорупційної програми" />
+    <meta property="og:description" content="Офіційний публічний портал та реєстр заходів антикорупційної програми Харківського національного університету внутрішніх справ (ХНУВС) на 2026–2027 роки. Прозорість, індикатори результативності та громадський контроль." />
+    <meta property="og:url" content="https://akpmonitor.dev/" />
+    <meta property="og:image" content="https://akpmonitor.dev/hnuvs-logo.png" />
+    <meta property="og:image:secure_url" content="https://akpmonitor.dev/hnuvs-logo.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:alt" content="Герб ХНУВС та емблема системи АКП-Монітор" />
+
+    <!-- Twitter Cards -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="АКП-Монітор · ХНУВС" />
+    <meta name="twitter:description" content="Офіційна цифрова система моніторингу та публічний реєстр виконання антикорупційної програми ХНУВС." />
+    <meta name="twitter:image" content="https://akpmonitor.dev/hnuvs-logo.png" />
+
+    <!-- Іконки -->
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <title>АКП-Монітор · ХНУВС — моніторинг виконання антикорупційної програми</title>
+
+    <!-- Мікророзмітка Schema.org (JSON-LD) для пошукових систем Google -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://akpmonitor.dev/#website",
+          "url": "https://akpmonitor.dev/",
+          "name": "АКП-Монітор · ХНУВС",
+          "alternateName": ["AKP-Monitor", "АКП-Монітор"],
+          "description": "Офіційна цифрова система моніторингу виконання антикорупційної програми Харківського національного університету внутрішніх справ",
+          "inLanguage": "uk-UA"
+        },
+        {
+          "@type": "GovernmentOrganization",
+          "@id": "https://akpmonitor.dev/#organization",
+          "name": "Харківський національний університет внутрішніх справ",
+          "alternateName": ["ХНУВС", "Kharkiv National University of Internal Affairs"],
+          "url": "https://akpmonitor.dev/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://akpmonitor.dev/hnuvs-logo.png",
+            "width": 512,
+            "height": 512
+          },
+          "department": {
+            "@type": "Organization",
+            "name": "Сектор з питань запобігання та виявлення корупції ХНУВС"
+          }
+        },
+        {
+          "@type": "WebPage",
+          "@id": "https://akpmonitor.dev/#webpage",
+          "url": "https://akpmonitor.dev/",
+          "name": "АКП-Монітор · ХНУВС — Моніторинг виконання антикорупційної програми",
+          "isPartOf": {
+            "@id": "https://akpmonitor.dev/#website"
+          },
+          "about": {
+            "@id": "https://akpmonitor.dev/#organization"
+          },
+          "description": "Публічний портал та електронний реєстр заходів антикорупційної програми ХНУВС на 2026–2027 роки.",
+          "inLanguage": "uk-UA"
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <noscript>
+      <div style="padding: 2rem; font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; line-height: 1.6; color: #1e293b;">
+        <h1>АКП-Монітор — Відкритий моніторинг виконання антикорупційної програми ХНУВС</h1>
+        <p>Офіційний електронний реєстр заходів, планових індикаторів та фактичного опису результатів їх виконання Харківського національного університету внутрішніх справ (ХНУВС) на 2026–2027 роки.</p>
+        <p>Сектор з питань запобігання та виявлення корупції ХНУВС забезпечує відкритість, прозорість та громадський контроль відповідно до вимог НАЗК.</p>
+        <p>
+          <a href="/public" style="color: #004494; font-weight: bold;">Перейти до публічного реєстру заходів</a> | 
+          <a href="/verify" style="color: #004494; font-weight: bold;">Перевірка автентичності звіту</a> |
+          <a href="/auth/login" style="color: #004494; font-weight: bold;">Вхід до кабінету уповноважених осіб</a>
+        </p>
+      </div>
+    </noscript>
+
+    <div id="root">
+      <header style="display:none" aria-hidden="true">
+        <h1>АКП-Монітор — Харківський національний університет внутрішніх справ</h1>
+        <p>Цифрова система моніторингу виконання антикорупційної програми та відкритий публічний портал громадського контролю ХНУВС на 2026–2027 роки.</p>
+        <nav>
+          <a href="/public">Публічний реєстр заходів</a>
+          <a href="/verify">Перевірка автентичності звіту</a>
+          <a href="/auth/login">Вхід до кабінету</a>
+        </nav>
+      </header>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

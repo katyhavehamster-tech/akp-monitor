@@ -1,0 +1,12 @@
+# robots.txt for https://akpmonitor.dev
+User-agent: *
+Allow: /
+Allow: /public
+Allow: /verify
+Disallow: /api/
+Disallow: /django-admin/
+Disallow: /auth/
+Disallow: /program/
+
+# Sitemap location
+Sitemap: https://akpmonitor.dev/sitemap.xml

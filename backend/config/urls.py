@@ -9,7 +9,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 STATIC_EXTS = {
     ".png", ".svg", ".ico", ".jpg", ".jpeg", ".webp", ".gif",
-    ".js", ".mjs", ".css", ".map", ".woff", ".woff2", ".ttf", ".json", ".txt", ".webmanifest",
+    ".js", ".mjs", ".css", ".map", ".woff", ".woff2", ".ttf", ".json", ".txt", ".webmanifest", ".xml",
 }
 
 
@@ -24,9 +24,15 @@ def spa(request, *args, **kwargs):
             candidate = (dist_root / rel).resolve()
             if candidate.is_relative_to(dist_root) and candidate.is_file():
                 ctype, _ = mimetypes.guess_type(str(candidate))
+                if rel.endswith(".xml"):
+                    ctype = "application/xml; charset=utf-8"
+                elif rel.endswith(".txt"):
+                    ctype = "text/plain; charset=utf-8"
                 resp = FileResponse(candidate.open("rb"), content_type=ctype or "application/octet-stream")
                 if rel.startswith("assets/"):
                     resp["Cache-Control"] = "public, max-age=31536000, immutable"
+                elif rel in ("robots.txt", "sitemap.xml"):
+                    resp["Cache-Control"] = "public, max-age=86400"
                 else:
                     resp["Cache-Control"] = "public, max-age=3600"
                 return resp
