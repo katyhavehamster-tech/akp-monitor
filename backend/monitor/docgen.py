@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 from datetime import date, datetime
@@ -95,32 +96,99 @@ def _page_numbers(sec):
         run._r.append(el)
 
 
-def apply_analyst_watermark(doc: Document, user_profile=None):
-    """Додає колонтитул з персоналізованим цифровим слідом аналітика ANAL на сторінки документа."""
-    if not user_profile or getattr(user_profile, "role", None) != "ANAL":
-        return
+def generate_watermark_png(stamp: str, width: int = 1400, height: int = 1000) -> bytes:
+    """Генерує напівпрозоре фонове зображення з повторюваним діагональним водяним знаком (Pillow)."""
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    txt_layer = Image.new("RGBA", (width * 2, height * 2), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(txt_layer)
+    font = ImageFont.load_default()
+
+    fill_color = (130, 140, 155, 45)
+    step_x = 440
+    step_y = 130
+    for y in range(0, height * 2, step_y):
+        offset = (y // step_y) % 2 * 180
+        for x in range(-120 + offset, width * 2, step_x):
+            draw.text((x, y), stamp, fill=fill_color, font=font)
+
+    resample_mode = getattr(Image, "Resampling", Image).BILINEAR
+    rotated = txt_layer.rotate(-28, resample=resample_mode)
+    start_x = (rotated.width - width) // 2
+    start_y = (rotated.height - height) // 2
+    cropped = rotated.crop((start_x, start_y, start_x + width, start_y + height))
+
+    buf = io.BytesIO()
+    cropped.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def protect_docx(doc: Document):
+    """Блокує редагування документа Word (Read-Only режим w:documentProtection)."""
+    settings = doc.settings.element
+    prot = settings.find(qn("w:documentProtection"))
+    if prot is None:
+        prot = OxmlElement("w:documentProtection")
+        settings.append(prot)
+    prot.set(qn("w:edit"), "readOnly")
+    prot.set(qn("w:enforcement"), "1")
+
+
+def apply_watermark_and_protection(doc: Document, user_profile=None, custom_stamp: str | None = None):
+    """Додає незнімний фоновий водяний знак (Pillow) у колонтитули та вмикає захист від редагування."""
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-    u_code = getattr(user_profile, "code", "ANAL")
-    stamp = f"ANAL · {u_code} · {now_str} · ІзОД / ДСК · Персоналізований цифровий слід"
+    u_code = getattr(user_profile, "code", "SYS")
+    u_role = getattr(user_profile, "role", "ANAL")
+    h = hashlib.sha256(f"{u_code}:{u_role}:{now_str}".encode()).hexdigest()[:12]
+    if u_role == "ANAL":
+        stamp = custom_stamp or f"ANAL · {u_code} · {u_role} · {now_str} · ІзОД / ДСК · SHA-256: {h}"
+    else:
+        stamp = custom_stamp or f"ІзОД / ДСК · {u_code} · {u_role} · {now_str} · SHA-256: {h}"
+
+    png_bytes = generate_watermark_png(stamp)
+
     for sec in doc.sections:
+        is_landscape = (sec.orientation == WD_ORIENT.LANDSCAPE)
+        w_mm = Mm(280) if is_landscape else Mm(195)
+
+        # Фоновий водяний знак у колонтитулі
+        hdr = sec.header
+        p_hdr = hdr.paragraphs[0] if hdr.paragraphs else hdr.add_paragraph()
+        r_img = p_hdr.add_run()
+        r_img.add_picture(io.BytesIO(png_bytes), width=w_mm)
+
+        # Текстовий колонтитул у підвалі
         foot = sec.footer
-        p = foot.paragraphs[0] if foot.paragraphs else foot.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        r = p.add_run(stamp)
-        r.font.name = FONT
-        r.font.size = Pt(8.5)
-        r.font.italic = True
-        r.font.color.rgb = RGBColor(110, 110, 110)
+        p_foot = foot.paragraphs[0] if foot.paragraphs else foot.add_paragraph()
+        p_foot.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_foot = p_foot.add_run(stamp)
+        r_foot.font.name = FONT
+        r_foot.font.size = Pt(8.5)
+        r_foot.font.italic = True
+        r_foot.font.color.rgb = RGBColor(110, 110, 110)
 
         if sec.different_first_page_header_footer:
+            f_hdr = sec.first_page_header
+            p_f_hdr = f_hdr.paragraphs[0] if f_hdr.paragraphs else f_hdr.add_paragraph()
+            r_f_img = p_f_hdr.add_run()
+            r_f_img.add_picture(io.BytesIO(png_bytes), width=w_mm)
+
             f_foot = sec.first_page_footer
-            p_f = f_foot.paragraphs[0] if f_foot.paragraphs else f_foot.add_paragraph()
-            p_f.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            r_f = p_f.add_run(stamp)
-            r_f.font.name = FONT
-            r_f.font.size = Pt(8.5)
-            r_f.font.italic = True
-            r_f.font.color.rgb = RGBColor(110, 110, 110)
+            p_f_foot = f_foot.paragraphs[0] if f_foot.paragraphs else f_foot.add_paragraph()
+            p_f_foot.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r_f_foot = p_f_foot.add_run(stamp)
+            r_f_foot.font.name = FONT
+            r_f_foot.font.size = Pt(8.5)
+            r_f_foot.font.italic = True
+            r_f_foot.font.color.rgb = RGBColor(110, 110, 110)
+
+    # Вмикаємо захист документа Word від редагування
+    protect_docx(doc)
+
+
+def apply_analyst_watermark(doc: Document, user_profile=None):
+    """Сумісність: викликає apply_watermark_and_protection з даними користувача."""
+    apply_watermark_and_protection(doc, user_profile)
 
 
 def _runs(p, text: str, size=None, bold=None, italic=None):

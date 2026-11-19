@@ -1004,19 +1004,38 @@ def recommendation_decide(request, pk):
 
 # ---------------------------------------------------------------- звіти й експорт
 def _xlsx_response(filename, sheets, user_profile=None):
+    from openpyxl.drawing.image import Image as OpenpyxlImage
+    from .docgen import generate_watermark_png
     wb = Workbook()
     wb.remove(wb.active)
     head_fill = PatternFill("solid", fgColor="0B2A5B")
     is_anal = bool(user_profile and getattr(user_profile, "role", None) == Role.ANAL)
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-    stamp = f"ANAL · {user_profile.code} · {now_str}" if is_anal else ""
+    u_code = getattr(user_profile, "code", "SYS")
+    u_role = getattr(user_profile, "role", "ANAL")
+    h = hashlib.sha256(f"{u_code}:{u_role}:{now_str}:{filename}".encode()).hexdigest()[:12]
+    stamp = f"ІзОД / ДСК · {u_code} · {u_role} · {now_str} · SHA-256: {h}"
+
+    wm_png_bytes = None
+    try:
+        wm_png_bytes = generate_watermark_png(stamp, width=1200, height=800)
+    except Exception:
+        pass
 
     for title, header, data in sheets:
         ws = wb.create_sheet(title[:31])
-        if is_anal:
-            ws.oddHeader.right.text = f"{stamp} · ДСК"
-            ws.oddFooter.right.text = f"Вивантажено: {stamp} · ІзОД"
-            ws.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ"
+        ws.oddHeader.right.text = f"{stamp} · ДСК"
+        ws.oddFooter.right.text = f"Вивантажено: {stamp} · ІзОД"
+        ws.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ"
+        if wm_png_bytes:
+            try:
+                ws.add_image(OpenpyxlImage(io.BytesIO(wm_png_bytes)), "B4")
+            except Exception:
+                pass
+        ws.protection.sheet = True
+        ws.protection.password = "AKP_IZOD_PROTECTED"
+        ws.protection.enable()
+
         ws.append(header)
         for c in ws[1]:
             c.font = Font(name="Times New Roman", size=12, bold=True, color="FFFFFF")
@@ -1038,8 +1057,8 @@ def _xlsx_response(filename, sheets, user_profile=None):
                         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
     if is_anal:
-        resp["X-Digital-Footprint"] = stamp
-        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · {stamp}"
+        resp["X-Digital-Footprint"] = f"ANAL · {u_code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {u_code} · {now_str}"
     return resp
 
 

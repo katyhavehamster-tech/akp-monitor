@@ -9,7 +9,9 @@ from rest_framework.test import APIClient
 from monitor.models import (AuditLog, Evidence, Measure, Profile, Program,
                             ReportingPeriod, ReportSnapshot, Role, Survey, SystemSettings, Unit)
 from monitor.selfcheck import run_selfcheck
-from monitor.surveys import compare, parse_csv, parse_survey_file, survey_docx, survey_xlsx
+from monitor.surveys import (EMPTY_ANSWER_LABEL, DONT_KNOW_LABEL, NO_RISKS_LABEL,
+                             compare, normalize_answer_value, parse_csv, parse_survey_file,
+                             survey_docx, survey_xlsx)
 
 
 class Base(TestCase):
@@ -106,7 +108,7 @@ class Integrity(Base):
             e.delete()
 
 
-class Surveys(TestCase):
+class Surveys(Base):
     def test_email_columns_dropped(self):
         raw = ("Позначка часу,Адреса електронної пошти,Питання\n"
                "01.01.2026,a@b.ua,Так\n02.01.2026,c@d.ua,Ні\n").encode()
@@ -120,6 +122,68 @@ class Surveys(TestCase):
         self.assertTrue(compare(a, a, min_group=5)["hidden"])
         b = {"questions": ["Q"], "answers": [{"Q": "Так"}] * 6}
         self.assertFalse(compare(b, b, min_group=5)["hidden"])
+
+    def test_normalization_uninformative_and_standard_responses(self):
+        # а) Відсутня відповідь / Не вказано
+        for empty_val in ("", "   ", ".", "….", "—", "?", "+", "Н", "0", "56", "👍", "не відповів", "без коментарів", "гг", "четко"):
+            self.assertEqual(normalize_answer_value(empty_val), EMPTY_ANSWER_LABEL, f"Failed for {empty_val}")
+
+        # b) Не знаю / Важко відповісти
+        for dk_val in ("не знаю", "незнаю", "навіть не знаю", "невідомо", "важко відповісти", "складно", "хз", "без понятия"):
+            self.assertEqual(normalize_answer_value(dk_val), DONT_KNOW_LABEL, f"Failed for {dk_val}")
+
+        # c) Ризики відсутні / Не стикався
+        for nr_val in ("ні", "нет", "ніяких", "немає", "нема", "не існує", "відсутні", "ризики відсутні", "не стикався", "все добре",
+                       "в університеті немає напрямків діяльності, які можуть бути вразливими..."):
+            self.assertEqual(normalize_answer_value(nr_val), NO_RISKS_LABEL, f"Failed for {nr_val}")
+
+        # Змістовні відповіді зберігаються без змін
+        meaningful = "Хабарництво при розподілі премій та стипендій"
+        self.assertEqual(normalize_answer_value(meaningful), meaningful)
+
+    def test_survey_export_watermark_and_protection(self):
+        import io
+        import openpyxl
+        from docx import Document
+
+        p = Profile.objects.filter(role=Role.ANAL).first()
+        res = {
+            "a": {"id": 1, "title": "Хвиля 2025"},
+            "b": {"id": 2, "title": "Хвиля 2026"},
+            "n_a": 40, "n_b": 45, "min_group": 5,
+            "questions": [
+                {
+                    "question": "Q1",
+                    "clean_title": "Чи стикалися ви з корупцією?",
+                    "kind": "choice",
+                    "is_mandatory": True,
+                    "options": [
+                        {"option": "Так", "a": {"n": 5, "pct": 12.5}, "b": {"n": 3, "pct": 6.7}, "delta_pp": -5.8},
+                        {"option": "Ні", "a": {"n": 35, "pct": 87.5}, "b": {"n": 42, "pct": 93.3}, "delta_pp": 5.8},
+                    ],
+                }
+            ],
+        }
+
+        # XLSX
+        raw_xlsx = survey_xlsx(res, p)
+        self.assertGreater(len(raw_xlsx), 1000)
+        wb = openpyxl.load_workbook(io.BytesIO(raw_xlsx))
+        self.assertIn("Загальні показники", wb.sheetnames)
+        self.assertIn("Розподіл відповідей", wb.sheetnames)
+        ws1 = wb["Загальні показники"]
+        ws2 = wb["Розподіл відповідей"]
+        self.assertTrue(ws1.protection.sheet)
+        self.assertTrue(ws2.protection.sheet)
+        self.assertIn("ANAL", ws1.oddHeader.right.text)
+
+        # DOCX
+        raw_docx = survey_docx(res, p)
+        self.assertGreater(len(raw_docx), 1000)
+        doc = Document(io.BytesIO(raw_docx))
+        settings_xml = doc.settings.element.xml
+        self.assertIn("w:documentProtection", settings_xml)
+        self.assertIn('w:edit="readOnly"', settings_xml)
 
 
 class Exports(Base):

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import html2canvas from 'html2canvas'
 import { api, download, fmtDateTime, type Any } from '../api'
 import { useAuth } from '../auth'
 import { C, Card, CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, ErrorBox, FilePicker, Loading, Pill, Stat, useApi, useIsMobile } from '../components/ui'
@@ -359,34 +360,27 @@ function Comparison({ c }: { c: Any }) {
     setHiddenQuestions(next)
   }
 
-  const exportChartPng = (elementId: string, title: string) => {
+  const exportChartPng = async (elementId: string, title: string) => {
     const el = document.getElementById(elementId)
     if (!el) return
-    const svg = el.querySelector('svg')
-    if (!svg) return
-
-    const svgData = new XMLSerializer().serializeToString(svg)
-    const canvas = document.createElement('canvas')
-    const svgSize = svg.getBoundingClientRect()
-    const scaleFactor = 2
-    canvas.width = svgSize.width * scaleFactor
-    canvas.height = svgSize.height * scaleFactor
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.scale(scaleFactor, scaleFactor)
-
-    const img = new Image()
-    img.onload = () => {
-      ctx.fillStyle = '#111827'
-      ctx.fillRect(0, 0, svgSize.width, svgSize.height)
-      ctx.drawImage(img, 0, 0)
+    try {
+      const isDark = document.documentElement.classList.contains('dark')
+      const canvas = await html2canvas(el, {
+        backgroundColor: isDark ? '#111827' : '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        ignoreElements: (element) => {
+          return element.hasAttribute('data-html2canvas-ignore') || element.classList.contains('no-print')
+        },
+      })
       const a = document.createElement('a')
       a.download = `${title.slice(0, 40).replace(/[^a-z0-9а-яіїєґ]/gi, '_')}.png`
       a.href = canvas.toDataURL('image/png')
       a.click()
+    } catch (e) {
+      console.error('Error exporting chart image:', e)
     }
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
   }
 
   return (
@@ -525,6 +519,7 @@ function Comparison({ c }: { c: Any }) {
                   <button
                     type="button"
                     className="btn secondary small icon no-print"
+                    data-html2canvas-ignore="true"
                     title="Зберегти графік як зображення PNG"
                     onClick={() => exportChartPng(cardId, q.clean_title || q.question)}
                   >

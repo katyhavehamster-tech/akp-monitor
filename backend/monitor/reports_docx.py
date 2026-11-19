@@ -27,8 +27,8 @@ def note_docx(period: ReportingPeriod, user_profile=None) -> bytes:
     c, p = mon["counts"], mon["percent"]
 
     doc = D.new_document()
+    D.apply_watermark_and_protection(doc, user_profile)
     if user_profile and getattr(user_profile, "role", None) == "ANAL":
-        D.apply_analyst_watermark(doc, user_profile)
         D.para(doc, f"ANAL · {user_profile.code} · ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ · ІзОД", indent=False, align="right", bold=True, size=9.5)
     D.org_header(doc, pr.organ.name.replace(" (вигадане)", ""), pr.coordinator_unit.name if pr.coordinator_unit else None)
     D.para(doc, "ДОВІДКА", indent=False, align="center", bold=True)
@@ -98,8 +98,8 @@ def portal_docx(year: int, half: int, user_profile=None, base_url: str = "") -> 
     pr = Program.objects.select_related("organ").first()
     rows = R.portal_report(pr, year, half)
     doc = D.new_document(landscape=True)
+    D.apply_watermark_and_protection(doc, user_profile)
     if user_profile and getattr(user_profile, "role", None) == "ANAL":
-        D.apply_analyst_watermark(doc, user_profile)
         D.para(doc, f"ANAL · {user_profile.code} · ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ · ІзОД", indent=False, align="right", bold=True, size=9.5)
     elif pr.restricted_info:
         D.para(doc, "Гриф обмеження доступу (проставляється відповідно до законодавства)", indent=False, align="right", size=12)

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import re
 from collections import Counter
@@ -24,13 +25,64 @@ MULTI_SEP = ";"
 
 MAX_SURVEY_BYTES = 10 * 1024 * 1024
 EMPTY_ANSWER_LABEL = "Відсутня відповідь / Не вказано"
+DONT_KNOW_LABEL = "Не знаю / Важко відповісти"
+NO_RISKS_LABEL = "Ризики відсутні / Не стикався"
 
-UNINFORMATIVE_TOKENS = {
-    "", "—", "–", "-", ".", ",", "?", "!", "/", "\\", "_",
-    "немає", "не має", "нема", "відсутні", "відсутня", "відсутній", "відсутнє",
-    "не вказано", "не зазначено", "без відповіді", "прочерк", "н/д", "n/a", "na",
-    "none", "null", "немає даних", "немає зауважень", "жодних", "нічого", "не помічено"
+ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
+
+
+def _sanitize_cell(v):
+    """Очищення клітинок для безпечного експорту в Excel (без падінь на спецсимволах і формула-ін'єкцій)."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        cleaned = ILLEGAL_CHARACTERS_RE.sub("", v)
+        if cleaned.startswith(("=", "+", "-", "@")) and not re.match(r"^[-+]?\d+(\.\d+)?$", cleaned):
+            return "'" + cleaned
+        return cleaned
+    return v
+
+
+# Відмови від відповіді, відписки, сленг (а)
+REFUSAL_TOKENS = {
+    "не відповів", "не відповідав", "відмовляюсь надавати відповідь", "відмовляюся надавати відповідь",
+    "відмовляюсь", "відмовляюся", "без коментарів", "без коментарів.", "гг", "четко", "чітко",
+    "немає даних", "н/д", "n/a", "na", "none", "null", "прочерк", "без відповіді", "не вказано",
+    "не зазначено"
 }
+
+# Варіації невпевненості (b)
+DONT_KNOW_VARIANTS = {
+    "не знаю", "незнаю", "навіть не знаю", "невідомо", "не відомо", "невідомі", "мені не відомо",
+    "не можу відповісти", "не можу сказати", "не можу дати точної відповіді",
+    "важко відповісти", "важко сказати", "важко визначити", "складно відповісти", "складно сказати",
+    "складно", "трудно відповісти", "не маю уявлення", "не маю поняття", "не маю думки", "не маю відповіді",
+    "без понятия", "без понятія", "хз", "не задумувався", "не замислювався", "не цікавлюсь", "не цікавилися",
+    "не в курсі", "не в курсе", "не знаю навіть", "не володію інформацією"
+}
+
+# Заперечення наявності проблем / ризиків (c)
+NO_RISKS_VARIANTS = {
+    "ні", "нi", "нет", "нічо", "нічого", "ніяких", "ніякі", "ніякої", "нияких", "ниякі", "неякі",
+    "ні які", "ні яких", "ні як", "жодних", "жодні", "жодного", "немає", "нема", "немае", "не мае",
+    "їх немає", "їх нема", "їх не має", "німа", "нима", "нету", "не існує", "не існують", "неіснують",
+    "не существует", "відсутні", "відустні", "відстуні", "відсутня", "відсутній", "відсутнє",
+    "ризики відсутні", "ризиків немає", "ризиків не має", "немає ризиків", "корупційних ризиків немає",
+    "корупційні ризики відсутні", "не стикався", "не стикалася", "не стикалися", "не помічав", "не помічала",
+    "не помічено", "не зустрічав", "не зустрічала", "не зустрічається", "не спостерігається",
+    "не було", "небуло", "все добре", "все чесно", "все прозоро", "все працює чітко", "немає зауважень"
+}
+
+NO_RISKS_PATTERNS = (
+    "в університеті немає напрямків діяльності",
+    "ризики корупції відсутні",
+    "корупційні ризики відсутні",
+    "корупційних ризиків немає",
+    "ризиків немає",
+    "ризики відсутні",
+    "за жодним з напрямків діяльності",
+    "за жодним напрямком",
+)
 
 
 def _decode_bytes(raw: bytes) -> str:
@@ -102,18 +154,56 @@ def parse_survey_file(raw: bytes, filename: str = "") -> dict:
     return parse_csv(raw)
 
 
+def _normalize_text_for_compare(s: str) -> str:
+    trans = str.maketrans("iacoxepABCEHIKMOPTX", "іасохерАВСЕНІКМОРТХ")
+    cleaned = s.translate(trans).lower()
+    cleaned = re.sub(r"^[^\wа-яіїєґ]+|[^\wа-яіїєґ]+$", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
 def normalize_answer_value(v: str, is_binary_yes_no: bool = False) -> str:
-    """Нормалізує порожні клітинки, символи та неінформативні відповіді."""
-    s = (v or "").strip()
+    """Нормалізує порожні клітинки, символи, відмови від відповіді та типові шаблонні варіанти."""
+    if v is None:
+        return EMPTY_ANSWER_LABEL
+    s = str(v).strip()
     if not s:
         return EMPTY_ANSWER_LABEL
-    if re.fullmatch(r"[\s\.\,\-\—\–\?\!\/\\_]+", s):
+
+    # а) Якщо рядок складається лише з розділових знаків, символів чи емодзі
+    cleaned_symbols = re.sub(r"[\s\.\,\-\—\–\_\?\!\:\;\~\`\'\"\#\+\*\/\\\\\(\)\[\]\{\}\<\>\«\»\…\ʼ\‘\.\)\👍\❤️\🤝\✅]+", "", s)
+    if not cleaned_symbols:
         return EMPTY_ANSWER_LABEL
-    low = s.lower().strip()
-    if low in UNINFORMATIVE_TOKENS:
+
+    # Одиночна літера або тільки цифри (1-3 цифри без тексту)
+    if len(cleaned_symbols) <= 1 or re.fullmatch(r"\d{1,3}", cleaned_symbols):
         return EMPTY_ANSWER_LABEL
-    if not is_binary_yes_no and low in {"ні", "нет", "ні.", "нет."}:
+
+    norm = _normalize_text_for_compare(s)
+    if not norm:
         return EMPTY_ANSWER_LABEL
+
+    # Якщо це бінарне питання (Так / Ні)
+    if is_binary_yes_no:
+        if norm in ("так", "да", "+"):
+            return "Так"
+        if norm in ("ні", "ні.", "нет", "-"):
+            return "Ні"
+        return s
+
+    # а) Відмови від відповіді та відписки
+    if norm in REFUSAL_TOKENS:
+        return EMPTY_ANSWER_LABEL
+
+    # b) «Не знаю / Важко відповісти»
+    if norm in DONT_KNOW_VARIANTS or any(norm.startswith(p) for p in ("не знаю", "важко сказати", "важко відповісти", "складно відповісти")):
+        return DONT_KNOW_LABEL
+
+    # c) «Ризики відсутні / Не стикався»
+    if norm in NO_RISKS_VARIANTS or any(p in norm for p in NO_RISKS_PATTERNS):
+        return NO_RISKS_LABEL
+
+    # Змістовна відповідь респондента
     return s
 
 
@@ -295,10 +385,13 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
     """Генерація зведеного Excel-звіту порівняння опитувань з водяним знаком ІзОД/ДСК."""
     import openpyxl
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.drawing.image import Image as OpenpyxlImage
+    from . import docgen as D
 
     wb = openpyxl.Workbook()
     ws1 = wb.active
     ws1.title = "Загальні показники"
+    ws2 = wb.create_sheet(title="Розподіл відповідей")
 
     navy_fill = PatternFill("solid", fgColor="0B2A5B")
     accent_fill = PatternFill("solid", fgColor="2563EB")
@@ -314,22 +407,35 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
 
     # Watermark / classification line
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-    u_code = user_profile.code if user_profile else "SYS"
-    u_role = user_profile.role if user_profile else "ANAL"
-    is_anal = bool(user_profile and getattr(user_profile, "role", None) == "ANAL")
-
-    if is_anal:
-        wm_text = f"ANAL · {u_code} · {now_str} · ІзОД / ДСК · Персоналізований цифровий слід"
-        ws1.oddHeader.right.text = f"ANAL · {u_code} · {now_str} · ДСК"
-        ws1.oddFooter.right.text = f"Вивантажено: ANAL · {u_code} · {now_str}"
-        ws1.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ · ІзОД"
-        ws2.oddHeader.right.text = f"ANAL · {u_code} · {now_str} · ДСК"
-        ws2.oddFooter.right.text = f"Вивантажено: ANAL · {u_code} · {now_str}"
-        ws2.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ · ІзОД"
+    u_code = getattr(user_profile, "code", "SYS")
+    u_role = getattr(user_profile, "role", "ANAL")
+    h = hashlib.sha256(f"{u_code}:{u_role}:{now_str}:survey".encode()).hexdigest()[:12]
+    if u_role == "ANAL":
+        wm_stamp = f"ANAL · {u_code} · {u_role} · {now_str} · ІзОД / ДСК · SHA-256: {h}"
     else:
-        wm_text = f"Сформовано: {u_code} ({u_role}) · {now_str}"
+        wm_stamp = f"ІзОД / ДСК · {u_code} · {u_role} · {now_str} · SHA-256: {h}"
 
-    ws1.append([wm_text])
+    # Generate watermark image via Pillow
+    wm_png_bytes = None
+    try:
+        wm_png_bytes = D.generate_watermark_png(wm_stamp, width=1300, height=900)
+    except Exception:
+        pass
+
+    for ws in (ws1, ws2):
+        ws.oddHeader.right.text = f"{wm_stamp} · ДСК"
+        ws.oddFooter.right.text = f"Вивантажено: {wm_stamp}"
+        ws.oddFooter.left.text = "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ · ІзОД"
+        if wm_png_bytes:
+            try:
+                ws.add_image(OpenpyxlImage(io.BytesIO(wm_png_bytes)), "B4")
+            except Exception:
+                pass
+        ws.protection.sheet = True
+        ws.protection.password = "AKP_IZOD_PROTECTED"
+        ws.protection.enable()
+
+    ws1.append([_sanitize_cell(wm_stamp)])
     ws1.merge_cells("A1:E1")
     ws1["A1"].font = Font(name="Calibri", size=9, italic=True, color="64748B")
 
@@ -347,9 +453,9 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
         cell.fill = navy_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    ws1.append(["Назва форми", title_a, title_b, ""])
-    ws1.append(["Кількість респондентів", res.get("n_a", 0), res.get("n_b", 0), f"Δ {res.get('n_b', 0) - res.get('n_a', 0)}"])
-    ws1.append(["Поріг анонімності", f"≥ {res.get('min_group', 5)}", f"≥ {res.get('min_group', 5)}", "Дотримано"])
+    ws1.append([_sanitize_cell("Назва форми"), _sanitize_cell(title_a), _sanitize_cell(title_b), ""])
+    ws1.append([_sanitize_cell("Кількість респондентів"), res.get("n_a", 0), res.get("n_b", 0), f"Δ {res.get('n_b', 0) - res.get('n_a', 0)}"])
+    ws1.append([_sanitize_cell("Поріг анонімності"), f"≥ {res.get('min_group', 5)}", f"≥ {res.get('min_group', 5)}", "Дотримано"])
     ws1.append([])
 
     # Scale questions
@@ -366,7 +472,7 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
             c.fill = accent_fill
 
         for sq in scale_q:
-            ws1.append([sq["clean_title"], sq.get("mean_a"), sq.get("mean_b"), sq.get("delta")])
+            ws1.append([_sanitize_cell(sq["clean_title"]), sq.get("mean_a"), sq.get("mean_b"), sq.get("delta")])
         ws1.append([])
 
     # Largest shifts
@@ -395,11 +501,10 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
             c.fill = navy_fill
 
         for s in shifts[:10]:
-            ws1.append([s["q"], s["opt"], f"{s['a']}%", f"{s['b']}%", f"{s['delta']:+} п.п."])
+            ws1.append([_sanitize_cell(s["q"]), _sanitize_cell(s["opt"]), f"{s['a']}%", f"{s['b']}%", f"{s['delta']:+} п.п."])
 
     # Sheet 2: Detailed distributions
-    ws2 = wb.create_sheet(title="Розподіл відповідей")
-    ws2.append([wm_text])
+    ws2.append([_sanitize_cell(wm_stamp)])
     ws2.merge_cells("A1:F1")
     ws2["A1"].font = Font(name="Calibri", size=9, italic=True, color="64748B")
 
@@ -418,9 +523,9 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
             b_info = f"{o['b']['n']} ({o['b']['pct']}%)"
             d_str = f"{o['delta_pp']:+} п.п."
             ws2.append([
-                q["clean_title"] if idx == 0 else "",
+                _sanitize_cell(q["clean_title"]) if idx == 0 else "",
                 is_mand_str if idx == 0 else "",
-                o["option"],
+                _sanitize_cell(o["option"]),
                 a_info,
                 b_info,
                 d_str,
@@ -453,15 +558,11 @@ def survey_docx(res: dict, user_profile=None) -> bytes:
 
     # Водяний знак / гриф
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-    u_code = user_profile.code if user_profile else "SYS"
-    u_role = user_profile.role if user_profile else "ANAL"
-    is_anal = bool(user_profile and getattr(user_profile, "role", None) == "ANAL")
+    u_code = getattr(user_profile, "code", "SYS")
+    u_role = getattr(user_profile, "role", "ANAL")
+    wm_line = f"{u_role} · {u_code} · {now_str} · ДСК"
 
-    if is_anal:
-        wm_line = f"ANAL · {u_code} · {now_str} · ІзОД / ДСК · Захист від витоку"
-        D.apply_analyst_watermark(doc, user_profile)
-    else:
-        wm_line = f"Сформовано: {u_code} ({u_role}) · {now_str}"
+    D.apply_watermark_and_protection(doc, user_profile)
 
     D.para(doc, "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ", indent=False, align="right", bold=True, size=10)
     D.para(doc, wm_line, indent=False, align="right", italic=True, size=8.5)
