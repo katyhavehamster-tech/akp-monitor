@@ -42,11 +42,11 @@ export default function App() {
   return <AuthProvider><BrowserRouter>
     <Suspense fallback={<Loading />}>
       <Routes>
+        <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/public" element={<PublicPortal />} />
         <Route path="/verify" element={<Verify />} />
         <Route element={<Guard />}>
-          <Route path="/" element={<Home />} />
           <Route path="/surveys" element={<Surveys />} />
           <Route path="/my" element={<MyMeasures />} />
           <Route path="/my/calendar" element={<CalendarPage />} />
