@@ -55,8 +55,9 @@ class Access(Base):
         self.assertEqual(r.status_code, 403)
 
     def test_surveys_only_for_authorized_person(self):
-        for code in ("u-001", "u-004", "u-006"):
+        for code in ("u-004", "u-006"):
             self.assertEqual(self.client_for(code).get("/api/surveys").status_code, 403, code)
+        self.assertEqual(self.client_for("u-001").get("/api/surveys").status_code, 200)
         self.assertEqual(self.client_for("u-002").get("/api/surveys").status_code, 200)
         self.assertEqual(self.client_for("u-005").get("/api/surveys").status_code, 200)
 
@@ -622,6 +623,79 @@ class ReportVerification(Base):
         r_koord_xlsx = c_koord.get("/api/reports/portal?year=2026&half=1&format=xlsx")
         self.assertEqual(r_koord_xlsx.status_code, 200)
         self.assertNotIn("X-Digital-Footprint", r_koord_xlsx.headers)
+
+    def test_unit_management_and_audit_trail(self):
+        c_koord = self.client_for("u-002")
+        c_admin = self.client_for("u-001")
+        c_vyk = self.client_for("u-006")
+        c_ker = self.client_for("u-004")
+
+        # 1. Виконавець та керівник не мають права створювати підрозділи
+        self.assertEqual(c_vyk.post("/api/units", {"code": "P98", "name": "Тест"}, format="json").status_code, 403)
+        self.assertEqual(c_ker.post("/api/units", {"code": "P98", "name": "Тест"}, format="json").status_code, 403)
+
+        # 2. Уповноважений створює новий підрозділ
+        r_create = c_koord.post("/api/units", {
+            "code": "P99", "name": "Науково-дослідна лабораторія", "type": "НДЛ", "note": "Створено уповноваженим"
+        }, format="json")
+        self.assertEqual(r_create.status_code, 201)
+        self.assertEqual(r_create.json()["code"], "P99")
+
+        # 3. Адміністратор редагує підрозділ
+        r_patch = c_admin.patch("/api/units/P99", {
+            "name": "Оновлена науково-дослідна лабораторія", "type": "Лабораторія"
+        }, format="json")
+        self.assertEqual(r_patch.status_code, 200)
+        self.assertEqual(r_patch.json()["name"], "Оновлена науково-дослідна лабораторія")
+
+        # 4. Перевірка незмінного криптографічного ланцюжка SHA-256
+        chain = AuditLog.verify_chain()
+        self.assertTrue(chain["ok"], f"Порушено цілісність ланцюжка: {chain}")
+        self.assertTrue(AuditLog.objects.filter(obj_type="pidrozdil", obj_id="P99").exists())
+
+    def test_execution_description_and_public_measures(self):
+        c_admin = self.client_for("u-001")
+        c_koord = self.client_for("u-002")
+        anon = APIClient()
+
+        # 1. Адміністратор та уповноважений можуть вносити розгорнутий опис виконання
+        r_exec = c_admin.post("/api/measures/Z-01/execution", {
+            "period": "2026-Q2",
+            "status": "v_roboti",
+            "result_text": "Проведено робочу зустріч щодо оптимізації процесів, розроблено проект наказу.",
+        }, format="json")
+        self.assertEqual(r_exec.status_code, 200)
+
+        # Перевірка отримання в картці заходу
+        r_m = c_koord.get("/api/measures/Z-01?period=2026-Q2")
+        self.assertEqual(r_m.status_code, 200)
+        self.assertIn("Проведено робочу зустріч", r_m.json()["result_text"])
+
+        # 2. Публічний реєстр для громадськості (/api/public/measures) при відкритому доступі
+        pr = Program.objects.first()
+        orig_restr = pr.restricted_info
+        pr.restricted_info = False
+        pr.save()
+        try:
+            r_pub = anon.get("/api/public/measures?period=2026-Q2")
+            self.assertEqual(r_pub.status_code, 200)
+            data = r_pub.json()
+            self.assertFalse(data["restricted"])
+            self.assertTrue(len(data["items"]) > 0)
+            m_z01 = next((item for item in data["items"] if item["code"] == "Z-01"), None)
+            self.assertIsNotNone(m_z01)
+            self.assertIn("Проведено робочу зустріч", m_z01["result_text"])
+
+            # 3. При увімкненні режиму ІзОД / ДСК публічний реєстр обмежує деталізований вміст
+            pr.restricted_info = True
+            pr.save()
+            r_restr = anon.get("/api/public/measures?period=2026-Q2")
+            self.assertEqual(r_restr.status_code, 200)
+            self.assertTrue(r_restr.json()["restricted"])
+            self.assertEqual(len(r_restr.json()["items"]), 0)
+        finally:
+            pr.restricted_info = orig_restr
+            pr.save()
 
 
 

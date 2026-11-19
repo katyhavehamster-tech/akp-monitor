@@ -16,7 +16,7 @@ export default function Surveys() {
   const [b, setB] = useState<number | null>(null)
   const [filter, setFilter] = useState({ fq: '', fv: '' })
 
-  const isKoord = profile?.role === 'KOORD'
+  const isKoord = profile?.role === 'KOORD' || profile?.role === 'ADMIN'
 
   useEffect(() => {
     if (list.data && list.data.length >= 2 && a === null) {

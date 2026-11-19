@@ -178,6 +178,7 @@ def measure_brief(s: R.Snap, period, flags_by_m, overdue_units, today):
         "indicator": m.indicator, "indicator_unit": m.indicator_unit, "indicator_target": m.indicator_target,
         "required_evidence": m.required_evidence, "evidence_count": len(s.evidence),
         "execution": execution_dict(s.execution), "status": s.status, "status_name": STATUS_NAMES[s.status],
+        "result_text": (s.execution.result_text if s.execution else "") or "",
         "portal_state": R.portal_state(s, period.end),
         "flags": flags_by_m.get(m.code, []),
         "nonexecution_risk": R.nonexecution_risk(s, today, overdue_units),
@@ -240,9 +241,89 @@ def public_overview(request):
             "organ": pr.organ.name if pr and pr.organ else "ХНУВС",
             "year_start": pr.period_start.year if pr and pr.period_start else 2026,
             "year_end": pr.period_end.year if pr and pr.period_end else 2028,
+            "restricted_info": bool(pr.restricted_info) if pr else False,
+            "approved": pr.approved if pr else "",
+            "nazk_status": pr.nazk_status if pr else "",
         },
         "period": cur_p.code if cur_p else None,
         "total_measures": total_measures,
+    })
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@ensure_csrf_cookie
+def public_measures(request):
+    """Публічний реєстр заходів програми для громадськості (якщо не увімкнено обмеження ДСК)."""
+    pr = Program.objects.select_related("organ", "coordinator_unit").first()
+    if not pr:
+        return Response({"restricted": False, "items": [], "sections": []})
+
+    is_restricted = bool(pr.restricted_info)
+    if is_restricted:
+        return Response({
+            "restricted": True,
+            "message": "Антикорупційна програма містить інформацію з обмеженим доступом (ІзОД / ДСК). Публікація деталізованого оперативного змісту та результатів виконання заходів обмежена відповідно до законодавства.",
+            "program": {
+                "title": pr.name,
+                "organ": pr.organ.name if pr.organ else "ХНУВС",
+                "year_start": pr.period_start.year if pr.period_start else 2026,
+                "year_end": pr.period_end.year if pr.period_end else 2028,
+                "approved": pr.approved,
+            },
+            "items": [],
+            "sections": [],
+        })
+
+    period = get_period(request)
+    snaps = R.snapshot(period, Measure.objects.filter(program=pr, is_excluded=False))
+
+    items = []
+    for s in snaps:
+        m = s.m
+        st = R.portal_state(s, period.end)
+        latest_opys = (s.execution.result_text if s.execution else "") or ""
+        items.append({
+            "code": m.code,
+            "section": m.section.code,
+            "section_name": m.section.portal_name,
+            "number": m.number,
+            "content": m.content,
+            "unit": {"code": m.responsible_unit.code, "name": m.responsible_unit.name},
+            "strok_text": m.strok_text,
+            "strok_type": m.strok_type,
+            "strok_date": m.strok_date,
+            "current_deadline": m.current_deadline,
+            "status": s.status,
+            "status_name": STATUS_NAMES.get(s.status, s.status),
+            "portal_state": st,
+            "indicator": m.indicator,
+            "indicator_unit": m.indicator_unit,
+            "indicator_target": m.indicator_target,
+            "indicator_fact": s.ind_fakt,
+            "result_text": latest_opys,
+            "fact_date": s.fakt,
+            "evidence_count": len(s.evidence),
+        })
+
+    sections = [
+        {"code": sec.code, "number": sec.number, "name": sec.portal_name}
+        for sec in pr.sections.all()
+    ]
+    return Response({
+        "restricted": False,
+        "program": {
+            "title": pr.name,
+            "organ": pr.organ.name if pr.organ else "ХНУВС",
+            "year_start": pr.period_start.year if pr.period_start else 2026,
+            "year_end": pr.period_end.year if pr.period_end else 2028,
+            "approved": pr.approved,
+        },
+        "period": period.code,
+        "total_measures": len(items),
+        "items": items,
+        "sections": sections,
     })
 
 
@@ -350,11 +431,101 @@ def program_update(request):
     return Response({"restricted_info": pr.restricted_info})
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 def units(request):
-    profile(request)
-    return Response([{"code": u.code, "name": u.name, "type": u.type, "note": u.note}
-                     for u in Unit.objects.all()])
+    p = profile(request)
+    if request.method == "POST":
+        p = require(request, {Role.KOORD, Role.ADMIN}, "Створювати підрозділи можуть уповноважений або технічний адміністратор.")
+        code = (request.data.get("code") or "").strip().upper()
+        name = (request.data.get("name") or "").strip()
+        type_val = (request.data.get("type") or "").strip()
+        note = (request.data.get("note") or "").strip()
+
+        if not code:
+            raise ValidationError({"code": "Вкажіть код підрозділу (наприклад, P15 або ВЗГ)."})
+        if len(code) > 10:
+            raise ValidationError({"code": "Код підрозділу не може бути довшим за 10 символів."})
+        if Unit.objects.filter(code__iexact=code).exists():
+            raise ValidationError({"code": f"Підрозділ із кодом «{code}» уже існує в системі."})
+        if not name:
+            raise ValidationError({"name": "Вкажіть назву підрозділу."})
+
+        pr = Program.objects.select_related("organ").first()
+        organ = pr.organ if (pr and pr.organ) else Organ.objects.first()
+        if not organ:
+            organ = Organ.objects.create(name="ХНУВС")
+
+        with transaction.atomic():
+            u = Unit.objects.create(code=code, organ=organ, name=name, type=type_val, note=note)
+            AuditLog.write(
+                p,
+                "створено підрозділ",
+                "pidrozdil",
+                u.code,
+                field="name",
+                old="",
+                new=f"{u.code}: {u.name}" + (f" ({u.type})" if u.type else ""),
+            )
+
+        return Response({
+            "code": u.code,
+            "name": u.name,
+            "type": u.type,
+            "note": u.note,
+            "measures_count": 0,
+        }, status=status.HTTP_201_CREATED)
+
+    # GET
+    res = []
+    for u in Unit.objects.all().order_by("code"):
+        res.append({
+            "code": u.code,
+            "name": u.name,
+            "type": u.type,
+            "note": u.note,
+            "measures_count": u.measures.count(),
+        })
+    return Response(res)
+
+
+@api_view(["PATCH", "PUT"])
+def unit_update(request, code):
+    p = require(request, {Role.KOORD, Role.ADMIN}, "Редагувати підрозділи можуть уповноважений або технічний адміністратор.")
+    u = get_object_or_404(Unit, code__iexact=code.strip())
+    d = request.data
+    changes = []
+
+    with transaction.atomic():
+        if "name" in d:
+            new_name = (d["name"] or "").strip()
+            if not new_name:
+                raise ValidationError({"name": "Назва підрозділу не може бути порожньою."})
+            if new_name != u.name:
+                AuditLog.write(p, "змінено назву підрозділу", "pidrozdil", u.code, "name", u.name, new_name)
+                u.name = new_name
+                changes.append("name")
+        if "type" in d:
+            new_type = (d["type"] or "").strip()
+            if new_type != u.type:
+                AuditLog.write(p, "змінено тип підрозділу", "pidrozdil", u.code, "type", u.type, new_type)
+                u.type = new_type
+                changes.append("type")
+        if "note" in d:
+            new_note = (d["note"] or "").strip()
+            if new_note != u.note:
+                AuditLog.write(p, "змінено примітку підрозділу", "pidrozdil", u.code, "note", u.note, new_note)
+                u.note = new_note
+                changes.append("note")
+        if changes:
+            u.save()
+
+    return Response({
+        "code": u.code,
+        "name": u.name,
+        "type": u.type,
+        "note": u.note,
+        "measures_count": u.measures.count(),
+    })
 
 
 @api_view(["GET"])
@@ -660,8 +831,8 @@ def measure_detail(request, code):
 
 
 def _can_edit_execution(p, m, period):
-    if p.role == Role.KOORD:
-        return {"allowed": True, "reason": "уповноважений може вносити зміни в будь-який час"}
+    if p.role in (Role.KOORD, Role.ADMIN):
+        return {"allowed": True, "reason": "уповноважений та адміністратор можуть вносити зміни в будь-який час"}
     if p.role != Role.VYK or m.responsible_unit_id != p.unit_id:
         return {"allowed": False, "reason": "лише перегляд"}
     if not period.is_open():
@@ -862,13 +1033,13 @@ def evidence_file(request, code):
 def comment_add(request, code):
     p = profile(request)
     m = get_object_or_404(Measure, code=code)
-    if not can_see_measure(p, m) or p.role in (Role.KER, Role.ANAL, Role.ADMIN):
-        raise PermissionDenied("Коментувати можуть виконавець заходу та уповноважений.")
+    if not can_see_measure(p, m) or p.role in (Role.KER, Role.ANAL):
+        raise PermissionDenied("Коментувати можуть виконавець заходу, уповноважений та адміністратор.")
     text = (request.data.get("text") or "").strip()
     if not text:
         raise ValidationError({"text": "Порожній коментар."})
     c = Comment.objects.create(measure=m, period=get_period(request), author=p, text=text,
-                               is_remark=p.role == Role.KOORD)
+                               is_remark=p.role in (Role.KOORD, Role.ADMIN))
     AuditLog.write(p, "додано коментар", "zakhid", m.code, "comment", "", text)
     return Response({"id": c.id}, status=201)
 
@@ -931,7 +1102,7 @@ def dashboard(request):
 
 def _reminders(p, period, briefs, today, days):
     out = []
-    if p.role in (Role.VYK, Role.KOORD):
+    if p.role in (Role.VYK, Role.KOORD, Role.ADMIN):
         if period.is_open(today):
             out.append({"level": "info", "text": f"Вікно внесення за {period.code} відкрите до "
                                                  f"{period.window_end:%d.%m.%Y}."})
@@ -960,7 +1131,7 @@ def _reminders(p, period, briefs, today, days):
             elif not ex or not ex["entered_at"]:
                 out.append({"level": "warning", "measure": b["code"],
                             "text": f"{b['code']}: інформацію за {period.code} ще не внесено."})
-    if p.role == Role.KOORD:
+    if p.role in (Role.KOORD, Role.ADMIN):
         n = sum(1 for b in briefs if b["execution"] and b["execution"]["approval"] == "submitted")
         if n:
             out.append({"level": "warning", "text": f"Очікують погодження: {n} заходів."})
@@ -1025,7 +1196,7 @@ def recommendations(request):
                       "decided_by": r.decided_by.code if r.decided_by else None, "decided_at": r.decided_at,
                       "decision_comment": r.decision_comment, "still_relevant": r.key in active_keys})
     return Response({"period": period.code, "items": items,
-                     "can_decide": p.role == Role.KOORD})
+                     "can_decide": p.role in (Role.KOORD, Role.ADMIN)})
 
 
 @api_view(["POST"])

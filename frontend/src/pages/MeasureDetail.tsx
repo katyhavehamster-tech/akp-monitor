@@ -4,7 +4,8 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import { api, fmtDate, fmtDateTime, num, safeUrl, type Any } from '../api'
 import { can, useAuth } from '../auth'
 import { APPROVAL_TONE, C, Card, CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, ErrorBox, FilePicker, Loading, Pill, PORTAL_TONE, RISK_TONE, STATUS, StatusPill, useApi } from '../components/ui'
-import { Edit3, Trash2 } from 'lucide-react'
+import { Edit3, PlusCircle, Trash2 } from 'lucide-react'
+import { UnitModal } from '../components/UnitModal'
 
 export default function MeasureDetail() {
   const { code } = useParams()
@@ -20,7 +21,7 @@ export default function MeasureDetail() {
   if (error) return <ErrorBox msg={error} />
   if (!m) return <Loading />
 
-  const isKoord = profile?.role === 'KOORD'
+  const isKoord = profile?.role === 'KOORD' || profile?.role === 'ADMIN'
   const canManage = can.manageMeasures(profile?.role)
   const back = profile?.role === 'VYK' ? '/my' : '/program/measures'
 
@@ -115,8 +116,57 @@ export default function MeasureDetail() {
           {m.execution && <Pill tone={APPROVAL_TONE[m.execution.approval]}>{m.execution.approval_name}</Pill>}
           <Pill tone={RISK_TONE[m.nonexecution_risk.level]}>ризик невиконання: {m.nonexecution_risk.level}</Pill>
         </div>
-        <p style={{ fontSize: '1.05rem', marginTop: '.6rem' }}>{m.content}</p>
-        <dl className="kv">
+        <div style={{ marginTop: '.85rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div>
+            <div style={{ fontSize: '.84rem', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '.25rem' }}>
+              Плановий зміст та очікуваний результат:
+            </div>
+            <p style={{ fontSize: '1.05rem', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>{m.content}</p>
+          </div>
+
+          <div
+            className="measure-fact-summary-box"
+            style={{
+              padding: '.85rem 1rem',
+              borderRadius: '8px',
+              background: 'var(--card-subtle, rgba(59, 130, 246, 0.05))',
+              border: '1px solid var(--border-subtle, rgba(59, 130, 246, 0.15))',
+              borderLeft: '4px solid var(--primary, #3b82f6)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '.4rem', marginBottom: '.35rem' }}>
+              <span style={{ fontSize: '.86rem', fontWeight: 700, color: 'var(--primary)' }}>
+                Підсумковий фактичний опис стану виконання заходу ({period}):
+              </span>
+              <Pill tone={PORTAL_TONE[m.portal_state]}>{m.portal_state}</Pill>
+            </div>
+            {m.execution?.result_text ? (
+              <p style={{ margin: '0 0 .4rem 0', fontSize: '.93rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                {m.execution.result_text}
+              </p>
+            ) : (
+              <p className="muted" style={{ margin: '0 0 .4rem 0', fontSize: '.88rem', fontStyle: 'italic' }}>
+                Опис фактичного виконання за звітний період {period} ще не внесено.
+              </p>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', fontSize: '.78rem', color: 'var(--muted)' }}>
+              {m.execution?.fact_date && (
+                <span>Фактична дата: <b style={{ color: 'var(--ink)' }}>{fmtDate(m.execution.fact_date)}</b></span>
+              )}
+              {m.execution?.indicator_fact !== undefined && m.execution?.indicator_fact !== null && (
+                <span>Факт індикатора: <b style={{ color: 'var(--ink)' }}>{num(m.execution.indicator_fact)} {m.indicator_unit}</b> {m.indicator_target !== null ? `(ціль: ${num(m.indicator_target)})` : ''}</span>
+              )}
+              {m.execution?.entered_by && (
+                <span>Вніс: {m.execution.entered_by} {fmtDateTime(m.execution.entered_at)}</span>
+              )}
+              {m.execution?.approved_by && (
+                <span>Погодив: {m.execution.approved_by} {fmtDateTime(m.execution.approved_at)}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <dl className="kv" style={{ marginTop: '1rem' }}>
           <dt>Розділ</dt>
           <dd>{m.section_name}</dd>
           <dt>Відповідальний підрозділ</dt>
@@ -135,13 +185,13 @@ export default function MeasureDetail() {
               </>
             )}
           </dd>
-          <dt>Індикатор виконання</dt>
+          <dt>Плановий індикатор виконання</dt>
           <dd>
             {m.indicator}
             {m.indicator_target !== null && (
               <>
                 {' '}
-                · ціль <b>{num(m.indicator_target)} {m.indicator_unit}</b>
+                · цільове значення: <b>{num(m.indicator_target)} {m.indicator_unit}</b>
               </>
             )}
           </dd>
@@ -194,29 +244,55 @@ export default function MeasureDetail() {
             m={m}
             period={period}
             onDone={reload}
-            canComment={profile?.role === 'KOORD' || profile?.role === 'VYK'}
+            canComment={profile?.role === 'KOORD' || profile?.role === 'ADMIN' || profile?.role === 'VYK'}
           />
         </div>
       </div>
 
-      <div className="grid g2" style={{ alignItems: 'start' }}>
-        <Card title="Історія за періодами">
+      <div style={{ marginTop: '1rem' }}>
+        <Card title="Хронологія звітів виконавців за періодами">
+          <p className="muted" style={{ fontSize: '.84rem', marginTop: '-.4rem', marginBottom: '.8rem' }}>
+            Поквартальна динаміка виконання заходу, детальний текстовий опис досягнутих результатів та статус погодження.
+          </p>
           <div className="table-wrap">
             <table className="t">
               <thead>
                 <tr>
-                  <th>Період</th>
-                  <th>Статус</th>
-                  <th>Внесено</th>
-                  <th>Погодження</th>
+                  <th style={{ width: 85 }}>Період</th>
+                  <th style={{ width: 110 }}>Статус</th>
+                  <th>Фактичний опис результату / пояснення причин</th>
+                  <th style={{ width: 120 }}>Індикатор</th>
+                  <th style={{ width: 120 }}>Внесено</th>
+                  <th style={{ width: 120 }}>Погодження</th>
                 </tr>
               </thead>
               <tbody>
                 {m.history[0].executions.map((e: Any) => (
                   <tr key={e.period}>
-                    <td>{e.period}</td>
+                    <td><b>{e.period}</b></td>
                     <td>
                       <StatusPill s={e.status} />
+                    </td>
+                    <td>
+                      {e.result_text ? (
+                        <div style={{ fontSize: '.88rem', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                          {e.result_text}
+                        </div>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                      {e.fact_date && (
+                        <div className="muted" style={{ fontSize: '.76rem', marginTop: '.2rem' }}>
+                          факт. дата: {fmtDate(e.fact_date)}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <small>
+                        {e.indicator_fact !== null && e.indicator_fact !== undefined
+                          ? `${num(e.indicator_fact)} ${m.indicator_unit || ''}`
+                          : '—'}
+                      </small>
                     </td>
                     <td>
                       <small>
@@ -234,6 +310,9 @@ export default function MeasureDetail() {
             </table>
           </div>
         </Card>
+      </div>
+
+      <div style={{ marginTop: '1rem' }}>
         <Card title="Журнал дій щодо заходу">
           <ul className="timeline">
             {m.audit.map((a: Any) => (
@@ -271,6 +350,8 @@ function EditMeasureForm({
   onDone: () => void
   onCancel: () => void
 }) {
+  const [unitsList, setUnitsList] = useState<Any[]>(units || [])
+  const [showUnitModal, setShowUnitModal] = useState(false)
   const [f, setF] = useState<Any>({
     content: m.content || '',
     section: m.section || 'R2',
@@ -289,6 +370,10 @@ function EditMeasureForm({
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
 
+  useEffect(() => {
+    if (units?.length) setUnitsList(units)
+  }, [units])
+
   const set = (k: string) => (e: Any) => setF({ ...f, [k]: e.target.value })
 
   const toggleCoUnit = (uCode: string) => {
@@ -298,6 +383,11 @@ function EditMeasureForm({
     } else {
       setF({ ...f, co_units: [...list, uCode] })
     }
+  }
+
+  const handleUnitCreated = (newUnit: { code: string; name: string; type?: string; note?: string }) => {
+    setUnitsList((prev: Any[]) => [...prev.filter((u: Any) => u.code !== newUnit.code), newUnit])
+    setF((prev: Any) => ({ ...prev, unit: newUnit.code }))
   }
 
   const save = async () => {
@@ -339,9 +429,21 @@ function EditMeasureForm({
           </select>
         </label>
         <label className="f">
-          Відповідальний підрозділ
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '.25rem', marginBottom: '.25rem' }}>
+            <span>Відповідальний підрозділ</span>
+            <button
+              type="button"
+              className="btn secondary mini"
+              onClick={() => setShowUnitModal(true)}
+              style={{ padding: '2px 7px', fontSize: '.75rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem' }}
+              title="Швидко створити новий структурний підрозділ"
+            >
+              <PlusCircle size={12} />
+              <span>+ Новий підрозділ</span>
+            </button>
+          </div>
           <select value={f.unit} onChange={set('unit')}>
-            {units.map(u => (
+            {unitsList.map(u => (
               <option key={u.code} value={u.code}>
                 {u.code} {u.name}
               </option>
@@ -430,6 +532,12 @@ function EditMeasureForm({
           Скасувати
         </button>
       </div>
+
+      <UnitModal
+        isOpen={showUnitModal}
+        onClose={() => setShowUnitModal(false)}
+        onSaved={handleUnitCreated}
+      />
     </Card>
   )
 }

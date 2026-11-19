@@ -22,10 +22,11 @@ const AdminUsers = lazy(() => import('./pages/Admin').then(m => ({ default: m.Ad
 const AdminPeriods = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminPeriods })))
 const AdminSystem = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminSystem })))
 const Verify = lazy(() => import('./pages/Verify'))
+const PublicPortal = lazy(() => import('./pages/PublicPortal'))
 
 function Home() {
   const { profile } = useAuth()
-  if (!profile) return <Navigate to="/login" />
+  if (!profile) return <Navigate to="/public" replace />
   const to = profile.role === 'VYK' ? '/my' : profile.role === 'ADMIN' ? '/admin/users' : '/program/dashboard'
   return <Navigate to={to} replace />
 }
@@ -42,6 +43,7 @@ export default function App() {
     <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/public" element={<PublicPortal />} />
         <Route path="/verify" element={<Verify />} />
         <Route element={<Guard />}>
           <Route path="/" element={<Home />} />

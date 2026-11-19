@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Moon, Sun } from 'lucide-react'
 import { ensureCsrf } from '../api'
 import { useAuth } from '../auth'
@@ -94,6 +94,14 @@ export default function Login() {
             <button type="submit" className="btn login-submit-btn" disabled={busy}>
               {busy ? 'Вхід…' : 'Увійти'}
             </button>
+          </div>
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.84rem', flexWrap: 'wrap', gap: '.5rem' }}>
+            <Link to="/public" style={{ color: 'var(--primary, #3b82f6)', fontWeight: 500 }}>
+              ← Публічний портал
+            </Link>
+            <Link to="/verify" className="muted" style={{ textDecoration: 'underline' }}>
+              Верифікація звіту ДСТУ
+            </Link>
           </div>
         </form>
       </div>

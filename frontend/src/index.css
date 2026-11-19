@@ -2094,3 +2094,46 @@ textarea { min-height: 110px; resize: vertical; }
     width: 100%;
   }
 }
+
+/* Підрозділи, картки та модальні вікна на малих екранах */
+.modal-overlay {
+  box-sizing: border-box;
+  padding: 0.5rem;
+}
+
+.modal-card {
+  box-sizing: border-box;
+  word-break: break-word;
+}
+
+@media (max-width: 480px) {
+  .modal-card {
+    padding: 0.85rem !important;
+    border-radius: 8px !important;
+  }
+  .modal-card h3 {
+    font-size: 1rem !important;
+  }
+  .measure-fact-summary-box {
+    padding: 0.65rem 0.75rem !important;
+  }
+}
+
+@media (max-width: 320px) {
+  .modal-card {
+    padding: 0.6rem !important;
+  }
+  .modal-card form button {
+    width: 100%;
+  }
+  .measure-fact-summary-box {
+    padding: 0.5rem !important;
+    font-size: 0.82rem !important;
+  }
+  .measure-opys-preview {
+    font-size: 0.76rem !important;
+  }
+  .public-portal-root header div {
+    gap: 0.4rem !important;
+  }
+}

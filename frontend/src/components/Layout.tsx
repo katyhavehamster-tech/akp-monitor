@@ -65,7 +65,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   { label: 'Антикорупційна програма', items: [
     ['/program/dashboard', 'Моніторинг', VIEW, LayoutDashboard],
     ['/program/measures', 'Реєстр заходів', VIEW, ListChecks],
-    ['/program/approvals', 'Погодження', ['KOORD'], ClipboardCheck],
+    ['/program/approvals', 'Погодження', ['KOORD', 'ADMIN'], ClipboardCheck],
     ['/program/flags', 'Сигнали (Risk Flags)', VIEW, Flag],
     ['/program/risks', 'Корупційні ризики', VIEW, ShieldAlert],
     ['/program/recommendations', 'Рекомендації', VIEW, Lightbulb],
@@ -75,7 +75,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     ['/program/passport', 'Паспорт програми', VIEW, BookOpen],
   ] },
   { label: 'Дослідження', items: [
-    ['/surveys', 'Опитування', ['KOORD', 'ANAL'], MessageSquareText],
+    ['/surveys', 'Опитування', ['KOORD', 'ADMIN', 'ANAL'], MessageSquareText],
   ] },
   { label: 'Адміністрування', items: [
     ['/admin/users', 'Користувачі', ['ADMIN'], Users],

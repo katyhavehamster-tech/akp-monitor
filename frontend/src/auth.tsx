@@ -67,8 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export const can = {
   edit: (r?: Role) => r === 'KOORD' || r === 'ADMIN',
   manageMeasures: (r?: Role) => r === 'KOORD' || r === 'ADMIN',
-  surveys: (r?: Role) => r === 'KOORD' || r === 'ANAL',
-  surveysEdit: (r?: Role) => r === 'KOORD',
+  surveys: (r?: Role) => r === 'KOORD' || r === 'ADMIN' || r === 'ANAL',
+  surveysEdit: (r?: Role) => r === 'KOORD' || r === 'ADMIN',
   tech: (r?: Role) => r === 'ADMIN',
   viewAll: (r?: Role) => !!r && r !== 'VYK',
 }

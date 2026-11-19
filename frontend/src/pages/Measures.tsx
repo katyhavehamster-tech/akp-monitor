@@ -4,6 +4,7 @@ import { PlusCircle, Search, X } from 'lucide-react'
 import { api, download, fmtDate, type Any } from '../api'
 import { can, useAuth } from '../auth'
 import { APPROVAL_TONE, Card, ErrorBox, Flags, Loading, PageHead, Pill, PORTAL_TONE, RISK_TONE, STATUS, StatusPill, useApi } from '../components/ui'
+import { UnitModal } from '../components/UnitModal'
 
 export function MeasureTable({ items, showUnit = true }: { items: Any[]; showUnit?: boolean }) {
   const nav = useNavigate()
@@ -50,6 +51,24 @@ export function MeasureTable({ items, showUnit = true }: { items: Any[]; showUni
                   {i.content}
                 </div>
                 {i.risk && <small className="muted">ризик {i.risk}</small>}
+                {i.result_text && (
+                  <div
+                    className="measure-opys-preview"
+                    style={{
+                      marginTop: '.35rem',
+                      padding: '.25rem .5rem',
+                      background: 'var(--card-subtle, rgba(255,255,255,0.03))',
+                      borderRadius: '4px',
+                      fontSize: '.82rem',
+                      lineHeight: 1.4,
+                      color: 'var(--ink)',
+                      borderLeft: '2px solid var(--primary, #3b82f6)',
+                    }}
+                  >
+                    <span className="muted" style={{ fontWeight: 600 }}>Опис виконання: </span>
+                    <span>{i.result_text}</span>
+                  </div>
+                )}
                 {i.is_excluded && i.exclusion_reason && (
                   <div className="muted" style={{ fontSize: '.8rem', color: 'var(--bad)', marginTop: '.2rem' }}>
                     Підстава: {i.exclusion_reason}
@@ -310,10 +329,16 @@ export default function Measures() {
 }
 
 function NewMeasure({ units, onDone }: { units: Any[]; onDone: () => void }) {
+  const [unitsList, setUnitsList] = useState<Any[]>(units || [])
+  const [showUnitModal, setShowUnitModal] = useState(false)
   const [f, setF] = useState<Any>({ section: 'R2', strok_type: 'data', co_units: [] })
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
   const risks = useApi<Any[]>('risks')
+
+  useEffect(() => {
+    if (units?.length) setUnitsList(units)
+  }, [units])
 
   const set = (k: string) => (e: Any) => setF({ ...f, [k]: e.target.value })
 
@@ -324,6 +349,11 @@ function NewMeasure({ units, onDone }: { units: Any[]; onDone: () => void }) {
     } else {
       setF({ ...f, co_units: [...list, uCode] })
     }
+  }
+
+  const handleUnitCreated = (newUnit: { code: string; name: string; type?: string; note?: string }) => {
+    setUnitsList((prev: Any[]) => [...prev.filter((u: Any) => u.code !== newUnit.code), newUnit])
+    setF((prev: Any) => ({ ...prev, unit: newUnit.code }))
   }
 
   const save = async () => {
@@ -365,10 +395,22 @@ function NewMeasure({ units, onDone }: { units: Any[]; onDone: () => void }) {
           </select>
         </label>
         <label className="f">
-          Головний відповідальний підрозділ
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '.25rem', marginBottom: '.25rem' }}>
+            <span>Головний підрозділ <b style={{ color: 'var(--primary)' }}>*</b></span>
+            <button
+              type="button"
+              className="btn secondary mini"
+              onClick={() => setShowUnitModal(true)}
+              style={{ padding: '2px 7px', fontSize: '.75rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem' }}
+              title="Швидко створити новий структурний підрозділ"
+            >
+              <PlusCircle size={12} />
+              <span>+ Новий підрозділ</span>
+            </button>
+          </div>
           <select value={f.unit || ''} onChange={set('unit')}>
             <option value="">— оберіть підрозділ —</option>
-            {units.map(u => (
+            {unitsList.map(u => (
               <option key={u.code} value={u.code}>
                 {u.code} {u.name}
               </option>
@@ -460,7 +502,7 @@ function NewMeasure({ units, onDone }: { units: Any[]; onDone: () => void }) {
           Співвиконавці заходу (за потреби):
         </div>
         <div className="row" style={{ flexWrap: 'wrap', gap: '.4rem' }}>
-          {units.map(u => {
+          {unitsList.map(u => {
             const active = (f.co_units || []).includes(u.code)
             return (
               <button
@@ -485,6 +527,12 @@ function NewMeasure({ units, onDone }: { units: Any[]; onDone: () => void }) {
           {saving ? 'Збереження…' : 'Зафіксувати захід у програмі'}
         </button>
       </div>
+
+      <UnitModal
+        isOpen={showUnitModal}
+        onClose={() => setShowUnitModal(false)}
+        onSaved={handleUnitCreated}
+      />
     </Card>
   )
 }
