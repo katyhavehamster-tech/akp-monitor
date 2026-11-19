@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CalendarDays, FileCheck, LogIn, Moon, Search, ShieldCheck, Sun, X,
+  BarChart3, CalendarDays, FileCheck, LogIn, Moon, PieChart as PieChartIcon, Search, ShieldCheck, Sun, X,
 } from 'lucide-react'
+import {
+  Bar as RBar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
 import { api, fmtDate, num, type Any } from '../api'
 import { Emblem, useTheme } from '../components/Layout'
-import { Loading, Pill } from '../components/ui'
+import {
+  CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, Loading, Pill,
+} from '../components/ui'
 
 export default function PublicPortal() {
   const { theme, toggleTheme } = useTheme()
@@ -52,6 +57,68 @@ export default function PublicPortal() {
     const failed = items.filter(i => i.status === 'ne_vykonano').length
     return { total, done, inProgress, notDue, failed }
   }, [items])
+
+  const statusChartData = useMemo(() => {
+    const total = items.length
+    if (!total) return []
+    const done = items.filter(i => i.status === 'vykonano').length
+    const inProgress = items.filter(i => ['v_roboti', 'chastkovo'].includes(i.status)).length
+    const notDue = items.filter(i => i.status === 'ne_rozpochato').length
+    const failed = items.filter(i => i.status === 'ne_vykonano').length
+
+    return [
+      { key: 'vykonano', name: 'Виконано', value: done, color: '#16a34a', percent: Math.round((done / total) * 100) },
+      { key: 'v_roboti', name: 'У роботі / частково', value: inProgress, color: '#2563eb', percent: Math.round((inProgress / total) * 100) },
+      { key: 'ne_rozpochato', name: 'Строк не настав', value: notDue, color: '#64748b', percent: Math.round((notDue / total) * 100) },
+      { key: 'ne_vykonano', name: 'Не виконано', value: failed, color: '#dc2626', percent: Math.round((failed / total) * 100) },
+    ].filter(d => d.value > 0)
+  }, [items])
+
+  const sectionChartData = useMemo(() => {
+    if (!items.length) return []
+    const secMap: Record<string, { code: string; name: string; shortName: string; total: number; done: number; inProgress: number; notDue: number; failed: number }> = {}
+
+    if (data?.sections) {
+      data.sections.forEach((s: Any) => {
+        secMap[s.code] = {
+          code: s.code,
+          name: s.name,
+          shortName: `Розділ ${s.number || s.code.replace('R', '')}`,
+          total: 0,
+          done: 0,
+          inProgress: 0,
+          notDue: 0,
+          failed: 0,
+        }
+      })
+    }
+
+    items.forEach(i => {
+      const code = i.section || 'R1'
+      if (!secMap[code]) {
+        secMap[code] = {
+          code,
+          name: i.section_name || code,
+          shortName: `Розділ ${code.replace('R', '')}`,
+          total: 0,
+          done: 0,
+          inProgress: 0,
+          notDue: 0,
+          failed: 0,
+        }
+      }
+      secMap[code].total += 1
+      if (i.status === 'vykonano') secMap[code].done += 1
+      else if (['v_roboti', 'chastkovo'].includes(i.status)) secMap[code].inProgress += 1
+      else if (i.status === 'ne_rozpochato') secMap[code].notDue += 1
+      else if (i.status === 'ne_vykonano') secMap[code].failed += 1
+    })
+
+    return Object.values(secMap).map(s => ({
+      ...s,
+      percentDone: s.total > 0 ? Math.round((s.done / s.total) * 100) : 0,
+    }))
+  }, [items, data?.sections])
 
   const filteredItems = useMemo(() => {
     return items.filter(i => {
@@ -106,7 +173,8 @@ export default function PublicPortal() {
             >
               <ShieldCheck size={15} className="public-portal-tool-icon" />
               <span className="public-portal-btn-label">
-                Верифікація<span className="public-portal-btn-label-extra"> звіту</span>
+                <span className="public-portal-btn-label-desktop">Верифікація</span>
+                <span className="public-portal-btn-label-extra"> звіту</span>
               </span>
             </Link>
 
@@ -117,7 +185,9 @@ export default function PublicPortal() {
               aria-label="Вхід до кабінету"
             >
               <LogIn size={15} className="public-portal-tool-icon" />
-              <span className="public-portal-btn-label">Кабінет</span>
+              <span className="public-portal-btn-label">
+                <span className="public-portal-cabinet-label">Кабінет</span>
+              </span>
             </Link>
 
             <button
@@ -231,6 +301,152 @@ export default function PublicPortal() {
         {/* Фільтри та перелік заходів при відкритому доступі */}
         {!loading && !data?.restricted && (
           <>
+            {/* Блок наочної аналітики та графіків виконання програми */}
+            {items.length > 0 && (
+              <section className="public-portal-charts-section" aria-label="Візуалізація виконання програми">
+                <div className="public-portal-charts-head">
+                  <div className="public-portal-charts-head-title">
+                    <BarChart3 size={18} className="public-portal-charts-head-icon" />
+                    <h2>Наочна аналітика та візуалізація виконання програми</h2>
+                  </div>
+                  <div className="public-portal-charts-head-sub">
+                    Інтерактивний розподіл статусів та динаміка за розділами за звітний період {data?.period || ''}
+                  </div>
+                </div>
+
+                <div className="public-portal-charts-grid">
+                  {/* Картка 1: Кругова діаграма статусів (Donut Chart) */}
+                  <div className="public-portal-chart-card">
+                    <div className="public-portal-chart-title">
+                      <PieChartIcon size={16} />
+                      <span>Розподіл за статусами виконання</span>
+                    </div>
+                    <div className="public-portal-donut-wrap">
+                      <div className="public-portal-donut-container">
+                        <ResponsiveContainer width="100%" height={210}>
+                          <PieChart>
+                            <Pie
+                              data={statusChartData}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius={50}
+                              outerRadius={80}
+                              paddingAngle={3}
+                              stroke="var(--surface)"
+                              strokeWidth={2}
+                            >
+                              {statusChartData.map((entry, idx) => (
+                                <Cell key={`cell-${idx}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              contentStyle={CHART_TOOLTIP_STYLE}
+                              itemStyle={CHART_ITEM_STYLE}
+                              labelStyle={CHART_LABEL_STYLE}
+                              formatter={(value: any, name: any) => [`${value} заходів`, name]}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="public-portal-donut-center">
+                          <div className="public-portal-donut-pct">
+                            {stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0}%
+                          </div>
+                          <div className="public-portal-donut-lbl">виконано</div>
+                        </div>
+                      </div>
+
+                      <div className="public-portal-donut-legend">
+                        {statusChartData.map(item => {
+                          const isSelected = statusFilter === item.key
+                          return (
+                            <button
+                              key={item.key}
+                              type="button"
+                              className={`public-portal-legend-item ${isSelected ? 'active' : ''}`}
+                              onClick={() => setStatusFilter(isSelected ? '' : item.key)}
+                              title={`Фільтрувати за статусом: ${item.name}`}
+                            >
+                              <span className="public-portal-legend-dot" style={{ backgroundColor: item.color }} />
+                              <span className="public-portal-legend-name">{item.name}</span>
+                              <span className="public-portal-legend-count">{item.value}</span>
+                              <span className="public-portal-legend-pct">({item.percent}%)</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Картка 2: Стовпчикова діаграма за розділами */}
+                  <div className="public-portal-chart-card">
+                    <div className="public-portal-chart-title">
+                      <BarChart3 size={16} />
+                      <span>Виконання за розділами програми</span>
+                    </div>
+                    <div className="public-portal-barchart-wrap">
+                      <ResponsiveContainer width="100%" height={170}>
+                        <BarChart
+                          data={sectionChartData}
+                          layout="vertical"
+                          margin={{ top: 5, right: 15, left: 5, bottom: 0 }}
+                        >
+                          <XAxis type="number" allowDecimals={false} fontSize={11} stroke="var(--muted)" />
+                          <YAxis
+                            type="category"
+                            dataKey="shortName"
+                            width={75}
+                            fontSize={11}
+                            stroke="var(--muted)"
+                            tickLine={false}
+                          />
+                          <Tooltip
+                            contentStyle={CHART_TOOLTIP_STYLE}
+                            itemStyle={CHART_ITEM_STYLE}
+                            labelStyle={CHART_LABEL_STYLE}
+                            cursor={{ fill: 'var(--surface-2)', opacity: 0.5 }}
+                          />
+                          <RBar dataKey="done" name="Виконано" stackId="sec" fill="#16a34a" />
+                          <RBar dataKey="inProgress" name="У роботі / частково" stackId="sec" fill="#2563eb" />
+                          <RBar dataKey="notDue" name="Строк не настав" stackId="sec" fill="#64748b" />
+                          <RBar dataKey="failed" name="Не виконано" stackId="sec" fill="#dc2626" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+
+                      <div className="public-portal-sections-progress">
+                        {sectionChartData.map(sec => {
+                          const isSelected = sectionFilter === sec.code
+                          return (
+                            <div
+                              key={sec.code}
+                              className={`public-portal-sec-prog-item ${isSelected ? 'active' : ''}`}
+                              onClick={() => setSectionFilter(isSelected ? '' : sec.code)}
+                              title={`Фільтрувати за розділом: ${sec.name}`}
+                            >
+                              <div className="public-portal-sec-prog-head">
+                                <span className="public-portal-sec-prog-name">{sec.shortName}</span>
+                                <span className="public-portal-sec-prog-val">
+                                  <b>{sec.done}</b>/{sec.total} ({sec.percentDone}%)
+                                </span>
+                              </div>
+                              <div className="public-portal-sec-prog-bar-bg">
+                                <div
+                                  className="public-portal-sec-prog-bar-fill"
+                                  style={{
+                                    width: `${sec.percentDone}%`,
+                                    backgroundColor: sec.percentDone >= 80 ? '#16a34a' : sec.percentDone >= 40 ? '#2563eb' : '#eab308',
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Панель пошуку і фільтрів */}
             <div className="public-portal-filters">
               <div className="public-portal-search-wrap">
