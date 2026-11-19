@@ -37,7 +37,9 @@ def _sanitize_cell(v):
         return ""
     if isinstance(v, str):
         cleaned = ILLEGAL_CHARACTERS_RE.sub("", v)
-        if cleaned.startswith(("=", "+", "-", "@")) and not re.match(r"^[-+]?\d+(\.\d+)?$", cleaned):
+        stripped = cleaned.lstrip()
+        formula_triggers = ("=", "+", "-", "@", "\t", "\r")
+        if (cleaned.startswith(formula_triggers) or (stripped and stripped.startswith(formula_triggers))) and not re.match(r"^[-+]?\d+(\.\d+)?$", cleaned.strip()):
             return "'" + cleaned
         return cleaned
     return v

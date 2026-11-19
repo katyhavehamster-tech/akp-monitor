@@ -760,6 +760,109 @@ class OwaspSecurityTests(Base):
         self.assertTrue(r2.json()["is_duplicate"])
         self.assertTrue(any(d["measure"] == "Z-01" for d in r2.json()["duplicate_in"]))
 
+    def test_evidence_whitelist_and_magic_bytes_validation(self):
+        """Сувора перевірка білого списку розширень, блокування макросів та валідація magic bytes."""
+        import zipfile
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        c = self.client_for("u-002")
+
+        # 1. Явно заборонені типи: .exe, .sh, .js, .svg, .html
+        for ext, content, mime in [
+            (".exe", b"MZ\x90\x00executable", "application/x-msdownload"),
+            (".sh", b"#!/bin/bash\nrm -rf /", "application/x-sh"),
+            (".js", b"alert(1)", "application/javascript"),
+            (".svg", b"<svg><script>alert(1)</script></svg>", "image/svg+xml"),
+            (".html", b"<html>evil</html>", "text/html"),
+            (".docm", b"PK\x03\x04fake docm", "application/vnd.ms-word.document.macroEnabled.12"),
+            (".xlsm", b"PK\x03\x04fake xlsm", "application/vnd.ms-excel.sheet.macroEnabled.12"),
+            (".pptm", b"PK\x03\x04fake pptm", "application/vnd.ms-powerpoint.presentation.macroEnabled.12"),
+        ]:
+            f = SimpleUploadedFile(f"file{ext}", content, content_type=mime)
+            r = c.post("/api/measures/Z-01/evidence", {
+                "title": f"Test {ext}", "doc_date": "2026-06-01", "file": f
+            }, format="multipart")
+            self.assertEqual(r.status_code, 400, f"Expected 400 for {ext}")
+
+        # 2. Фейковий PDF (невірні magic bytes)
+        fake_pdf = SimpleUploadedFile("fake.pdf", b"NOT_A_PDF_HEADER_CONTENT", content_type="application/pdf")
+        r_pdf = c.post("/api/measures/Z-01/evidence", {
+            "title": "Fake PDF", "doc_date": "2026-06-01", "file": fake_pdf
+        }, format="multipart")
+        self.assertEqual(r_pdf.status_code, 400)
+        self.assertIn("PDF", str(r_pdf.content))
+
+        # 3. Фейковий DOCX (не ZIP)
+        fake_docx = SimpleUploadedFile("fake.docx", b"NOT_A_ZIP_CONTAINER", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        r_docx = c.post("/api/measures/Z-01/evidence", {
+            "title": "Fake DOCX", "doc_date": "2026-06-01", "file": fake_docx
+        }, format="multipart")
+        self.assertEqual(r_docx.status_code, 400)
+
+        # 4. DOCX з макросом (vbaProject.bin) всередині
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("[Content_Types].xml", b"<Types/>")
+            zf.writestr("word/document.xml", b"<w:document/>")
+            zf.writestr("word/vbaProject.bin", b"evil macro content")
+        macro_docx = SimpleUploadedFile("macro.docx", buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        r_macro = c.post("/api/measures/Z-01/evidence", {
+            "title": "Macro DOCX", "doc_date": "2026-06-01", "file": macro_docx
+        }, format="multipart")
+        self.assertEqual(r_macro.status_code, 400)
+        self.assertIn("макроси", str(r_macro.content))
+
+        # 5. Валідний PNG файл
+        valid_png = SimpleUploadedFile("valid.png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRtest", content_type="image/png")
+        r_png = c.post("/api/measures/Z-01/evidence", {
+            "title": "Valid PNG", "doc_date": "2026-06-01", "file": valid_png
+        }, format="multipart")
+        self.assertEqual(r_png.status_code, 201)
+
+        # 6. Валідний DOCX файл
+        buf_valid = io.BytesIO()
+        with zipfile.ZipFile(buf_valid, "w") as zf:
+            zf.writestr("[Content_Types].xml", b"<Types/>")
+            zf.writestr("word/document.xml", b"<w:document/>")
+        valid_docx = SimpleUploadedFile("valid.docx", buf_valid.getvalue(), content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        r_valid_docx = c.post("/api/measures/Z-01/evidence", {
+            "title": "Valid DOCX", "doc_date": "2026-06-01", "file": valid_docx
+        }, format="multipart")
+        self.assertEqual(r_valid_docx.status_code, 201)
+
+    def test_formula_injection_neutralization(self):
+        """Захист від CSV/XLSX Formula Injection (OWASP CWE-1236)."""
+        from monitor.views import _sanitize_export_cell
+        from monitor.surveys import _sanitize_cell
+
+        # 1. Небезпечні формульні префікси екрануються
+        for dangerous in ["=cmd|'/C calc'!A0", "+cmd", "-2+5*cmd", "@SUM(A1:A10)", "\t=1+1", "\r+calc", "  =calc"]:
+            san = _sanitize_export_cell(dangerous)
+            self.assertTrue(san.startswith("'"), f"Expected {dangerous} to be escaped, got {san}")
+            san_survey = _sanitize_cell(dangerous)
+            self.assertTrue(san_survey.startswith("'"), f"Expected {dangerous} in survey to be escaped, got {san_survey}")
+
+        # 2. Звичайні числа та номери телефонів залишаються без змін
+        for safe in ["+380501234567", "-5", "+10", "42", "123.45", "-0.5"]:
+            self.assertEqual(_sanitize_export_cell(safe), safe)
+            self.assertEqual(_sanitize_cell(safe), safe)
+
+    def test_login_log_injection_sanitization(self):
+        """Захист від Log Injection при невдалих входах: очищення переносів рядків та спецсимволів."""
+        client = APIClient()
+        cache.clear()
+        malicious_user = "admin\r\n[AUDIT] fake_admin injected successful login\x00\x1b"
+        r = client.post("/api/auth/login", {"username": malicious_user, "password": "wrong_password_test"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["detail"], "Невірний логін або пароль.")
+
+        last_log = AuditLog.objects.filter(action="невдала спроба входу").order_by("-id").first()
+        self.assertIsNotNone(last_log)
+        self.assertNotIn("\r", last_log.obj_id)
+        self.assertNotIn("\n", last_log.obj_id)
+        self.assertNotIn("\x00", last_log.obj_id)
+        self.assertNotIn("wrong_password_test", last_log.old_value)
+        self.assertNotIn("wrong_password_test", last_log.new_value)
+
 
 
 

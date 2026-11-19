@@ -930,9 +930,12 @@ function EvidencePanel({ m, period, onDone }: { m: Any; period: string; onDone: 
               Файл
               <FilePicker
                 file={file}
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.rtf,.odt,.ods,.png,.jpg,.jpeg,.webp,.zip,.p7s,.sig"
+                accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
                 onChange={setFile}
               />
+              <span className="muted" style={{ fontSize: '0.75rem', marginTop: 3 }}>
+                Дозволені формати: PDF, DOCX, XLSX, PNG, JPG/JPEG (до 15 МБ)
+              </span>
             </div>
           </div>
           <label className="f">

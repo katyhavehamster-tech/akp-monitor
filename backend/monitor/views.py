@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import re
+import zipfile
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -41,9 +42,14 @@ from .surveys import compare as compare_surveys
 from .surveys import group_options, parse_csv, parse_survey_file
 
 STATUS_NAMES = dict(Execution.Status.choices)
+# Суворий білий список безпечних форматів документів і підтверджень
 ALLOWED_EVIDENCE_EXTS = {
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".rtf",
-    ".odt", ".ods", ".png", ".jpg", ".jpeg", ".webp", ".zip", ".p7s", ".sig",
+    ".pdf", ".docx", ".xlsx", ".png", ".jpg", ".jpeg"
+}
+# Явно заблоковані небезпечні формати: макроси, виконувані файли, веб-скрипти
+BLOCKED_EVIDENCE_EXTS = {
+    ".docm", ".xlsm", ".pptm", ".exe", ".sh", ".js", ".svg", ".html",
+    ".htm", ".bat", ".cmd", ".vbs", ".ps1", ".jar", ".msi", ".dll", ".scr",
 }
 MAX_EVIDENCE_BYTES = 15 * 1024 * 1024
 LOGIN_WINDOW_SEC = 60
@@ -52,6 +58,49 @@ LOGIN_MAX_IP_FAILS = 30
 _HTTP_URL_VALIDATOR = URLValidator(schemes=["http", "https"])
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 _PURE_NUM_RE = re.compile(r"^[+-]?\d+(?:[.,]\d+)?$")
+
+
+def _validate_evidence_file(f, ext: str):
+    """Сувора валідація Magic Bytes (сигнатур файлів) та блокування макросів / шкідливого коду."""
+    pos = f.tell()
+    try:
+        f.seek(0)
+        header = f.read(32)
+        f.seek(0)
+
+        if ext == ".pdf":
+            if not header.startswith(b"%PDF"):
+                raise ValidationError({"file": "Вміст файлу не відповідає формату PDF (невірний заголовок файлу)."})
+        elif ext == ".png":
+            if not header.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValidationError({"file": "Вміст файлу не відповідає формату PNG (невірний заголовок файлу)."})
+        elif ext in (".jpg", ".jpeg"):
+            if not header.startswith(b"\xff\xd8\xff"):
+                raise ValidationError({"file": "Вміст файлу не відповідає формату JPEG (невірний заголовок файлу)."})
+        elif ext in (".docx", ".xlsx"):
+            if not header.startswith(b"PK\x03\x04"):
+                raise ValidationError({"file": f"Вміст файлу не відповідає формату {ext.upper()} (очікується валідний архів OpenXML)."})
+            try:
+                f.seek(0)
+                with zipfile.ZipFile(f, "r") as zf:
+                    namelist = zf.namelist()
+                    for name in namelist:
+                        lower_name = name.lower()
+                        # Блокування файлів із макросами (VBA) та виконуваними скриптами всередині архіву
+                        if "vbaproject.bin" in lower_name or lower_name.endswith(
+                            (".vba", ".bas", ".cls", ".exe", ".sh", ".js", ".bat", ".cmd", ".ps1")
+                        ):
+                            raise ValidationError({"file": "Файл містить заборонені макроси або виконувані елементи (VBA)."})
+                    if ext == ".docx":
+                        if not any(n.startswith("word/") or n == "[Content_Types].xml" for n in namelist):
+                            raise ValidationError({"file": "Вміст файлу не відповідає структурі документа DOCX."})
+                    elif ext == ".xlsx":
+                        if not any(n.startswith("xl/") or n == "[Content_Types].xml" for n in namelist):
+                            raise ValidationError({"file": "Вміст файлу не відповідає структурі таблиці XLSX."})
+            except zipfile.BadZipFile:
+                raise ValidationError({"file": f"Пошкоджений або некоректний архів {ext.upper()}."})
+    finally:
+        f.seek(pos)
 
 
 def _parse_date(val, field="date", allow_empty=False) -> date | None:
@@ -102,8 +151,12 @@ def _validate_http_url(raw: str | None, field="link") -> str:
 
 def _sanitize_export_cell(v):
     """Захист CSV/XLSX від інʼєкцій формул (OWASP CWE-1236)."""
-    if isinstance(v, str) and v and v.startswith(_FORMULA_PREFIXES) and not _PURE_NUM_RE.match(v):
-        return "'" + v
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        stripped = v.lstrip()
+        if (v.startswith(_FORMULA_PREFIXES) or (stripped and stripped.startswith(_FORMULA_PREFIXES))) and not _PURE_NUM_RE.match(v.strip()):
+            return "'" + v
     return v
 
 
@@ -348,8 +401,14 @@ def public_measures(request):
 @permission_classes([AllowAny])
 @ensure_csrf_cookie
 def login(request):
-    username = (request.data.get("username") or "").strip().lower()[:64]
-    password = request.data.get("password") or ""
+    raw_username = str(request.data.get("username") or "")
+    password = str(request.data.get("password") or "")
+
+    # Захист від Log Injection (CWE-117): видалення \r, \n та керуючих символів
+    clean_username = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", "", raw_username).strip()
+    safe_log_username = clean_username[:30] if clean_username else "unknown"
+    username = clean_username.lower()[:64]
+
     ip = _client_ip(request)
     user_key = f"login_fail:u:{username}" if username else None
     ip_key = f"login_fail:ip:{ip}"
@@ -365,7 +424,7 @@ def login(request):
 
     if not username or not password:
         cache.set(ip_key, ip_att + 1, 60)
-        AuditLog.write(None, "невдала спроба входу", "korystuvach", (username or "unknown")[:30])
+        AuditLog.write(None, "невдала спроба входу", "korystuvach", safe_log_username)
         return Response({"detail": "Невірний логін або пароль."}, status=400)
 
     u = authenticate(username=username, password=password)
@@ -373,7 +432,7 @@ def login(request):
         cache.set(ip_key, ip_att + 1, 60)
         if user_key:
             cache.set(user_key, user_att + 1, 60)
-        AuditLog.write(None, "невдала спроба входу", "korystuvach", (username or "unknown")[:30])
+        AuditLog.write(None, "невдала спроба входу", "korystuvach", safe_log_username)
         return Response({"detail": "Невірний логін або пароль."}, status=400)
 
     if user_key:
@@ -970,9 +1029,12 @@ def evidence_add(request, code):
         if f.size > MAX_EVIDENCE_BYTES:
             raise ValidationError({"file": "Розмір файлу не має перевищувати 15 МБ."})
         ext = Path(str(f.name or "")).suffix.lower()
+        if ext in BLOCKED_EVIDENCE_EXTS:
+            raise ValidationError({"file": f"Файли типу {ext} (виконувані файли, скрипти та файли з макросами) суворо заборонені з міркувань кібербезпеки."})
         if ext not in ALLOWED_EVIDENCE_EXTS:
             allowed_str = ", ".join(sorted(ALLOWED_EVIDENCE_EXTS))
-            raise ValidationError({"file": f"Неприпустимий тип файлу ({ext or 'без розширення'}). Дозволені: {allowed_str}."})
+            raise ValidationError({"file": f"Неприпустимий тип файлу ({ext or 'без розширення'}). Дозволені лише безпечні формати: {allowed_str}."})
+        _validate_evidence_file(f, ext)
         for chunk in f.chunks():
             h.update(chunk)
         f.seek(0)
@@ -1028,7 +1090,12 @@ def evidence_file(request, code):
         fh = e.file.open("rb")
     except OSError:
         return Response({"detail": "Файл підтвердження не знайдено на диску."}, status=404)
-    fname = Path(e.file.name).name
+    raw_fname = Path(e.file.name).name
+    # Очищення імені файлу: лише безпечні символи, захист від Header Injection (CWE-113) та Path Traversal
+    safe_fname = re.sub(r'[^a-zA-Z0-9а-яА-ЯіїєґІЇЄҐ._ -]', '_', raw_fname).strip()
+    if not safe_fname or safe_fname.startswith('.'):
+        safe_fname = f"evidence_{e.code}{Path(raw_fname).suffix}"
+
     is_anal = bool(p and p.role == Role.ANAL)
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     if SystemSettings.is_izod_active() or is_anal:
@@ -1039,11 +1106,11 @@ def evidence_file(request, code):
             e.code,
             field="file",
             old="",
-            new=f"Файл: {fname} (захід {e.measure.code}, SHA-256: {e.sha256[:12]}…)",
+            new=f"Файл: {safe_fname} (захід {e.measure.code}, SHA-256: {e.sha256[:12]}…)",
         )
 
     # Якщо завантажує ANAL і файл є документом Word (.docx) — вбудовуємо персоналізований цифровий слід
-    if is_anal and fname.lower().endswith(".docx"):
+    if is_anal and safe_fname.lower().endswith(".docx"):
         try:
             from docx import Document
             from . import docgen as D
@@ -1057,15 +1124,17 @@ def evidence_file(request, code):
                 out_buf.getvalue(),
                 content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
-            resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+            resp["Content-Disposition"] = f'attachment; filename="{safe_fname}"'
             resp["X-Content-Type-Options"] = "nosniff"
+            resp["Content-Security-Policy"] = "default-src 'none'; sandbox"
             resp["X-Digital-Footprint"] = f"ANAL · {p.code} · {now_str}"
             resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {p.code} · {now_str}"
             return resp
         except Exception:
             fh = e.file.open("rb")
 
-    resp = FileResponse(fh, as_attachment=True, filename=fname)
+    resp = FileResponse(fh, as_attachment=True, filename=safe_fname)
+    resp["Content-Disposition"] = f'attachment; filename="{safe_fname}"'
     resp["X-Content-Type-Options"] = "nosniff"
     resp["Content-Security-Policy"] = "default-src 'none'; sandbox"
     if is_anal:
@@ -1300,7 +1369,7 @@ def _xlsx_response(filename, sheets, user_profile=None):
         ws.protection.password = "AKP_IZOD_PROTECTED"
         ws.protection.enable()
 
-        ws.append(header)
+        ws.append([_sanitize_export_cell(h) for h in header])
         for c in ws[1]:
             c.font = Font(name="Times New Roman", size=12, bold=True, color="FFFFFF")
             c.fill = head_fill

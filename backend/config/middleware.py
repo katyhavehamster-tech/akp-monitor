@@ -40,10 +40,6 @@ class SecurityHeadersMiddleware:
         response = self.get_response(request)
         path = request.path
 
-        # --- HSTS (Strict-Transport-Security) ---
-        if "Strict-Transport-Security" not in response:
-            response["Strict-Transport-Security"] = self.HSTS_VALUE
-
         # --- Permissions-Policy ---
         if "Permissions-Policy" not in response:
             response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
