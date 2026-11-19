@@ -8,6 +8,7 @@ import {
 import { fmtDate } from '../api'
 import logoUrl from '../assets/hnuvs-logo.png'
 import { useAuth, type Role } from '../auth'
+import { Watermark } from './Watermark'
 
 export function Emblem({ size = 48, className = '' }: { size?: number; className?: string }) {
   const [src, setSrc] = useState<string>(logoUrl)
@@ -74,7 +75,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     ['/program/passport', 'Паспорт програми', VIEW, BookOpen],
   ] },
   { label: 'Дослідження', items: [
-    ['/surveys', 'Опитування', ['KOORD'], MessageSquareText],
+    ['/surveys', 'Опитування', ['KOORD', 'ANAL'], MessageSquareText],
   ] },
   { label: 'Адміністрування', items: [
     ['/admin/users', 'Користувачі', ['ADMIN'], Users],
@@ -341,6 +342,7 @@ export default function Layout() {
         </div>
       </header>
       <main className="page"><Outlet /></main>
+      <Watermark />
       <footer><div className="wrap">
         © {new Date().getFullYear()} Харківський національний університет внутрішніх справ (ХНУВС) · АКП-Монітор. Усі права захищені.
       </div></footer>

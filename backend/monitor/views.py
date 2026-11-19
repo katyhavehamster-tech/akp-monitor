@@ -31,12 +31,12 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from . import rules as R
-from .access import (AUDIT, CONTENT_EDIT, SURVEYS, TECH, VIEW_ALL, can_see_measure, profile, require,
-                     scoped_measures)
+from .access import (AUDIT, CONTENT_EDIT, MEASURE_MANAGE, SURVEYS, SURVEYS_EDIT, SURVEYS_VIEW,
+                     TECH, VIEW_ALL, can_see_measure, profile, require, scoped_measures)
 from .models import (AuditLog, Comment, DeadlineChange, Evidence, Execution, Measure, Profile, Program,
                      Recommendation, ReportingPeriod, Risk, Role, Section, Survey, SystemSettings, Unit)
 from .surveys import compare as compare_surveys
-from .surveys import group_options, parse_csv
+from .surveys import group_options, parse_csv, parse_survey_file
 
 STATUS_NAMES = dict(Execution.Status.choices)
 ALLOWED_EVIDENCE_EXTS = {
@@ -179,6 +179,9 @@ def measure_brief(s: R.Snap, period, flags_by_m, overdue_units, today):
         "portal_state": R.portal_state(s, period.end),
         "flags": flags_by_m.get(m.code, []),
         "nonexecution_risk": R.nonexecution_risk(s, today, overdue_units),
+        "is_excluded": getattr(m, "is_excluded", False),
+        "exclusion_reason": getattr(m, "exclusion_reason", ""),
+        "excluded_at": m.excluded_at.isoformat() if getattr(m, "excluded_at", None) else None,
     }
 
 
@@ -392,6 +395,8 @@ def measures(request):
     idx = _flags_index(flags)
     items = [measure_brief(s, period, idx, overdue_units, today) for s in snaps]
     q = request.query_params
+    if q.get("show_excluded") != "1":
+        items = [i for i in items if not i.get("is_excluded")]
     if q.get("section"):
         items = [i for i in items if i["section"] == q["section"]]
     if q.get("unit"):
@@ -409,7 +414,7 @@ def measures(request):
 
 
 def _measure_create(request, p):
-    require(request, CONTENT_EDIT, "Планувати заходи може лише уповноважений.")
+    require(request, MEASURE_MANAGE, "Планувати та редагувати заходи може уповноважений та адміністратор.")
     d = request.data
     pr = Program.objects.first()
     errors = {}
@@ -448,14 +453,16 @@ def _measure_create(request, p):
         indicator_target=_parse_float(d.get("indicator_target"), field="indicator_target"),
         required_evidence=str(d.get("required_evidence", "")).strip()[:500],
         resources=str(d.get("resources", "")).strip()[:300])
-    AuditLog.write(p, "створено захід", "zakhid", m.code)
-    return Response({"code": m.code}, status=201)
+    if "co_units" in d and isinstance(d["co_units"], list):
+        m.co_units.set(Unit.objects.filter(code__in=d["co_units"]))
+    AuditLog.write(p, "створено захід", "zakhid", m.code, "content", "", m.content[:140])
+    return Response({"code": m.code, "number": m.number, "section": m.section.code}, status=201)
 
 
-@api_view(["GET", "PATCH"])
+@api_view(["GET", "PATCH", "DELETE"])
 def measure_detail(request, code):
     p = profile(request)
-    m = get_object_or_404(Measure.objects.select_related("section", "risk", "responsible_unit"), code=code)
+    m = get_object_or_404(Measure.objects.select_related("section", "risk", "responsible_unit", "excluded_by"), code=code)
     if not can_see_measure(p, m):
         raise PermissionDenied("Цей захід належить іншому підрозділу.")
     if request.method == "GET" and SystemSettings.is_izod_active():
@@ -477,17 +484,93 @@ def measure_detail(request, code):
                 new=f"Картка {m.code} ({m.responsible_unit.code if m.responsible_unit else ''}): {m.content[:80]}",
             )
     if request.method == "PATCH":
-        require(request, CONTENT_EDIT, "Змінювати план заходу може лише уповноважений.")
-        editable = ["content", "strok_text", "indicator", "indicator_unit", "required_evidence", "resources"]
+        require(request, MEASURE_MANAGE, "Змінювати параметри заходу може уповноважений та адміністратор.")
+        editable = ["content", "strok_text", "indicator", "indicator_unit", "required_evidence", "resources", "strok_type"]
         for f in editable:
             if f in request.data and request.data[f] != getattr(m, f):
                 AuditLog.write(p, "змінено захід", "zakhid", m.code, f, getattr(m, f), request.data[f])
                 setattr(m, f, request.data[f])
+        if "strok_date" in request.data:
+            new_date = _parse_date(request.data["strok_date"], field="strok_date", allow_empty=True)
+            if m.strok_date != new_date:
+                AuditLog.write(p, "змінено захід", "zakhid", m.code, "strok_date", str(m.strok_date or ""), str(new_date or ""))
+                m.strok_date = new_date
         if "indicator_target" in request.data:
             v = _parse_float(request.data["indicator_target"], field="indicator_target")
-            AuditLog.write(p, "змінено захід", "zakhid", m.code, "indicator_target", m.indicator_target, v)
-            m.indicator_target = v
+            if m.indicator_target != v:
+                AuditLog.write(p, "змінено захід", "zakhid", m.code, "indicator_target", str(m.indicator_target or ""), str(v or ""))
+                m.indicator_target = v
+        if "unit" in request.data:
+            u_obj = Unit.objects.filter(code=request.data["unit"]).first()
+            if u_obj and m.responsible_unit_id != u_obj.id:
+                AuditLog.write(p, "змінено відповідальний підрозділ", "zakhid", m.code, "responsible_unit", m.responsible_unit.code, u_obj.code)
+                m.responsible_unit = u_obj
+        if "risk" in request.data:
+            r_obj = Risk.objects.filter(code=request.data["risk"]).first() if request.data["risk"] else None
+            old_r = m.risk.code if m.risk else ""
+            new_r = r_obj.code if r_obj else ""
+            if old_r != new_r:
+                AuditLog.write(p, "змінено прив'язку до ризику", "zakhid", m.code, "risk", old_r, new_r)
+                m.risk = r_obj
+        if "section" in request.data:
+            sec_obj = Section.objects.filter(code=request.data["section"]).first()
+            if sec_obj and m.section_id != sec_obj.id:
+                AuditLog.write(p, "змінено розділ заходу", "zakhid", m.code, "section", m.section.code, sec_obj.code)
+                m.section = sec_obj
+        if "co_units" in request.data and isinstance(request.data["co_units"], list):
+            new_cos = list(Unit.objects.filter(code__in=request.data["co_units"]))
+            old_cos_str = ",".join(sorted(u.code for u in m.co_units.all()))
+            new_cos_str = ",".join(sorted(u.code for u in new_cos))
+            if old_cos_str != new_cos_str:
+                AuditLog.write(p, "змінено співвиконавців заходу", "zakhid", m.code, "co_units", old_cos_str, new_cos_str)
+                m.co_units.set(new_cos)
         m.save()
+
+    if request.method == "DELETE":
+        require(request, MEASURE_MANAGE, "Виключати або видаляти захід може уповноважений та адміністратор.")
+        has_evidence = m.evidence.exists()
+        has_approved = m.executions.filter(approval="approved").exists()
+        reason = ""
+        if isinstance(request.data, dict):
+            reason = request.data.get("reason") or ""
+        if not reason and request.query_params.get("reason"):
+            reason = request.query_params.get("reason") or ""
+        reason = str(reason).strip()
+
+        if has_evidence or has_approved:
+            if not reason:
+                return Response({
+                    "detail": "Захід має завантажені незмінні підтвердження (Evidence) або погоджені звіти. "
+                              "Для виключення заходу з програми обов'язково зазначте підставу "
+                              "(наприклад: номер та дату наказу/розпорядження).",
+                    "requires_reason": True,
+                }, status=400)
+            m.is_excluded = True
+            m.exclusion_reason = reason
+            m.excluded_at = timezone.now()
+            m.excluded_by = p
+            m.save()
+            AuditLog.write(
+                p,
+                "виключено захід із програми",
+                "zakhid",
+                m.code,
+                "is_excluded",
+                "False",
+                f"True: {reason}"[:140],
+            )
+            return Response({
+                "status": "excluded",
+                "code": m.code,
+                "message": f"Захід {m.code} успішно виключено з антикорупційної програми (Підстава: {reason}). "
+                           "Історичні дані та незмінні докази збережено.",
+            })
+        else:
+            m_code = m.code
+            m_content = m.content
+            AuditLog.write(p, "видалено захід", "zakhid", m_code, "content", m_content[:80], "")
+            m.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
     period = get_period(request)
     today = SystemSettings.today()
     snaps = R.snapshot(period, Measure.objects.filter(pk=m.pk))
@@ -514,6 +597,10 @@ def measure_detail(request, code):
                   .select_related("actor").order_by("-id")[:100]],
         "can_edit_execution": _can_edit_execution(p, m, period),
         "period": period_dict(period, today),
+        "is_excluded": getattr(m, "is_excluded", False),
+        "exclusion_reason": getattr(m, "exclusion_reason", ""),
+        "excluded_at": m.excluded_at.isoformat() if getattr(m, "excluded_at", None) else None,
+        "excluded_by": m.excluded_by.code if getattr(m, "excluded_by", None) else None,
     })
     if m.risk:
         r = m.risk
@@ -1311,24 +1398,27 @@ def log_print_action(request):
     return Response({"ok": True})
 
 
-# ---------------------------------------------------------------- опитування (лише уповноважений)
+# ---------------------------------------------------------------- опитування
 @api_view(["GET", "POST"])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def surveys(request):
-    p = require(request, SURVEYS, "Опитування доступні лише уповноваженому.")
+    p = profile(request)
     if request.method == "POST":
+        p = require(request, SURVEYS_EDIT, "Завантажувати результати опитування може лише уповноважений.")
         f = request.FILES.get("file")
         if not f:
-            raise ValidationError({"file": "Завантажте CSV, експортований з Google Форми."})
+            raise ValidationError({"file": "Завантажте файл CSV або Excel (.xlsx), експортований з форми."})
         try:
-            parsed = parse_csv(f.read())
+            parsed = parse_survey_file(f.read(), f.name)
         except Exception as e:  # noqa: BLE001
-            raise ValidationError({"file": f"Не вдалося прочитати CSV: {e}"})
+            raise ValidationError({"file": f"Не вдалося прочитати файл опитування: {e}"})
         s = Survey.objects.create(title=request.data.get("title") or f.name, uploaded_by=p,
                                   questions=parsed["questions"], answers=parsed["answers"],
                                   dropped_columns=parsed["dropped"])
         AuditLog.write(p, "завантажено результати опитування", "opytuvannia", s.id, "vidpovidei", "", s.n)
         return Response({"id": s.id, "n": s.n, "dropped_columns": s.dropped_columns}, status=201)
+
+    require(request, SURVEYS_VIEW, "Опитування доступні уповноваженому та аналітику.")
     return Response([{"id": s.id, "title": s.title, "uploaded_at": s.uploaded_at, "n": s.n,
                       "questions": len(s.questions), "dropped_columns": s.dropped_columns}
                      for s in Survey.objects.order_by("uploaded_at")])
@@ -1336,7 +1426,7 @@ def surveys(request):
 
 @api_view(["DELETE"])
 def survey_delete(request, pk):
-    p = require(request, SURVEYS)
+    p = require(request, SURVEYS_EDIT, "Видаляти опитування може лише уповноважений.")
     s = get_object_or_404(Survey, pk=pk)
     AuditLog.write(p, "видалено результати опитування", "opytuvannia", s.id, "title", s.title, "")
     s.delete()
@@ -1345,7 +1435,7 @@ def survey_delete(request, pk):
 
 @api_view(["GET"])
 def survey_compare(request):
-    require(request, SURVEYS, "Опитування доступні лише уповноваженому.")
+    p = require(request, SURVEYS_VIEW, "Опитування доступні уповноваженому та аналітику.")
     a = get_object_or_404(Survey, pk=request.query_params.get("a"))
     b = get_object_or_404(Survey, pk=request.query_params.get("b"))
     da = {"questions": a.questions, "answers": a.answers}
@@ -1354,6 +1444,36 @@ def survey_compare(request):
                          request.query_params.get("fq"), request.query_params.get("fv"))
     res.update({"a": {"id": a.id, "title": a.title}, "b": {"id": b.id, "title": b.title},
                 "filters": group_options(da, db)})
+
+    fmt = request.query_params.get("format", "").strip().lower()
+    if fmt == "xlsx":
+        if SystemSettings.is_izod_active():
+            AuditLog.write(p, "експорт результатів опитування XLSX", "opytuvannia", f"{a.id}_{b.id}")
+        from .surveys import survey_xlsx
+        resp = HttpResponse(
+            survey_xlsx(res, p),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        resp["Content-Disposition"] = f'attachment; filename="porivniannia_opytuvan_{a.id}_vs_{b.id}.xlsx"'
+        return resp
+
+    if fmt == "docx":
+        if SystemSettings.is_izod_active():
+            AuditLog.write(p, "експорт результатів опитування Word (ДСТУ 4163:2020)", "opytuvannia", f"{a.id}_{b.id}")
+        from .surveys import survey_docx
+        return _docx_response(f"analitychnyi_zvit_opytuvannia_{a.id}_vs_{b.id}.docx", survey_docx(res, p))
+
+    if SystemSettings.is_izod_active():
+        AuditLog.write(
+            p,
+            "перегляд порівняння опитувань",
+            "opytuvannia",
+            f"{a.id}_vs_{b.id}",
+            "a_b",
+            "",
+            f"{a.title[:40]} / {b.title[:40]}",
+        )
+
     return Response(res)
 
 

@@ -208,7 +208,7 @@ def portal_report(program: Program, year: int, half: int) -> list[dict]:
     Береться стан заходів на кінець півріччя — останній квартал півріччя (Q2 або Q4)."""
     period = ReportingPeriod.objects.get(year=year, quarter=2 if half == 1 else 4)
     end = period.half_end
-    snaps = snapshot(period, Measure.objects.filter(program=program))
+    snaps = snapshot(period, Measure.objects.filter(program=program, is_excluded=False))
     flags = compute_flags(period, snaps)
     by_m = defaultdict(list)
     for f in flags:

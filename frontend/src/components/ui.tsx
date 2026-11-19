@@ -68,8 +68,8 @@ export const CHART_LABEL_STYLE: CSSProperties = { color: 'var(--ink)', fontWeigh
 
 export const progressColor = (p: number) => p < .1 ? C.bad : p < .5 ? C.warn : C.ok
 
-export function Card({ title, actions, children, className = '' }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
-  return <section className={`card ${className}`.trim()}>
+export function Card({ title, actions, children, className = '', id }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; id?: string }) {
+  return <section id={id} className={`card ${className}`.trim()}>
     {(title || actions) && <div className="card-head">{title && <h2>{title}</h2>}{actions && <div className="row card-actions">{actions}</div>}</div>}
     {children}
   </section>
@@ -94,7 +94,7 @@ export const RISK_TONE: Record<string, string> = { 'низький': 'ok', 'се
 export const APPROVAL_TONE: Record<string, string> = { draft: 'grey', submitted: 'warn', approved: 'ok', returned: 'bad' }
 
 export const StatusPill = ({ s }: { s: string }) => <span className={`pill ${STATUS[s]?.tone || 'grey'}`}>{STATUS[s]?.label || s}</span>
-export const Pill = ({ tone, children }: { tone: string; children: ReactNode }) => <span className={`pill ${tone}`}>{children}</span>
+export const Pill = ({ tone, children, title }: { tone: string; children: ReactNode; title?: string }) => <span className={`pill ${tone}`} title={title}>{children}</span>
 
 export function Flags({ flags }: { flags: Any[] }) {
   if (!flags?.length) return <span className="muted">—</span>

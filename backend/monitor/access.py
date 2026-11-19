@@ -15,9 +15,12 @@ from .models import Measure, Role
 
 ALL = {Role.KOORD, Role.ADMIN, Role.KER, Role.VYK, Role.ANAL}
 VIEW_ALL = {Role.KOORD, Role.ADMIN, Role.KER, Role.ANAL}
-CONTENT_EDIT = {Role.KOORD}
+CONTENT_EDIT = {Role.KOORD, Role.ADMIN}
+MEASURE_MANAGE = {Role.KOORD, Role.ADMIN}
 TECH = {Role.ADMIN}
-SURVEYS = {Role.KOORD}
+SURVEYS = {Role.KOORD, Role.ANAL}
+SURVEYS_VIEW = {Role.KOORD, Role.ANAL}
+SURVEYS_EDIT = {Role.KOORD}
 AUDIT = {Role.KOORD, Role.ADMIN, Role.KER, Role.ANAL}
 
 

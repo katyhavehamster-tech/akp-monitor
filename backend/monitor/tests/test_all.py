@@ -6,9 +6,10 @@ from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from monitor.models import AuditLog, Evidence, Program, ReportingPeriod, ReportSnapshot, SystemSettings
+from monitor.models import (AuditLog, Evidence, Measure, Profile, Program,
+                            ReportingPeriod, ReportSnapshot, Role, Survey, SystemSettings, Unit)
 from monitor.selfcheck import run_selfcheck
-from monitor.surveys import compare, parse_csv
+from monitor.surveys import compare, parse_csv, parse_survey_file, survey_docx, survey_xlsx
 
 
 class Base(TestCase):
@@ -52,14 +53,16 @@ class Access(Base):
         self.assertEqual(r.status_code, 403)
 
     def test_surveys_only_for_authorized_person(self):
-        for code in ("u-001", "u-004", "u-006", "u-005"):
+        for code in ("u-001", "u-004", "u-006"):
             self.assertEqual(self.client_for(code).get("/api/surveys").status_code, 403, code)
         self.assertEqual(self.client_for("u-002").get("/api/surveys").status_code, 200)
+        self.assertEqual(self.client_for("u-005").get("/api/surveys").status_code, 200)
 
     def test_tech_admin_cannot_change_content(self):
-        c = self.client_for("u-001")
+        # Звичайний користувач (наприклад, керівник u-004 або виконавець u-006) не може змінювати параметри заходу
+        c = self.client_for("u-004")
         self.assertEqual(c.patch("/api/measures/Z-01", {"content": "x"}, format="json").status_code, 403)
-        self.assertEqual(c.get("/api/users").status_code, 200)
+        self.assertEqual(self.client_for("u-001").get("/api/users").status_code, 200)
 
     def test_executor_window(self):
         c = self.client_for("u-010")
@@ -362,5 +365,142 @@ class ReportVerification(Base):
 
         c.get("/api/measures/Z-02")
         self.assertFalse(AuditLog.objects.filter(action="перегляд картки заходу", obj_id="Z-02").exists())
+
+    def test_survey_cp1251_xlsx_normalization_and_export(self):
+        """Перевірка парсингу cp1251, .xlsx, нормалізації неінформативних відповідей та експорту."""
+        import io
+        import openpyxl
+
+        # 1. Тест кирилиці в cp1251
+        cp_data = (
+            "Позначка часу,Чи стикалися з корупцією?*,Які корупційні ризики помічені?\n"
+            "01.09.2026 12:00,Ні,відсутні\n"
+            "01.09.2026 12:05,Так,Непрозорі закупівлі\n"
+            "01.09.2026 12:10,Ні,-\n"
+            "01.09.2026 12:15,Ні,.\n"
+            "01.09.2026 12:20,Ні,немає\n"
+            "01.09.2026 12:25,Так,Хабарництво при екзаменах\n"
+        ).encode("cp1251")
+        p_cp = parse_survey_file(cp_data, "test.csv")
+        self.assertEqual(len(p_cp["answers"]), 6)
+        self.assertEqual(len(p_cp["questions"]), 2)
+        self.assertTrue(any("корупцією" in q for q in p_cp["questions"]))
+
+        # 2. Тест імпорту з Excel .xlsx
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["Timestamp", "Email", "Чи стикалися з корупцією?*", "Які корупційні ризики помічені?"])
+        ws.append(["12.09.2026", "secret@univ.edu", "Ні", "немає"])
+        ws.append(["12.09.2026", "user@univ.edu", "Так", "Конфлікт інтересів"])
+        ws.append(["12.09.2026", "test@univ.edu", "Ні", "—"])
+        ws.append(["12.09.2026", "anon@univ.edu", "Ні", "відсутні"])
+        ws.append(["12.09.2026", "officer@univ.edu", "Так", "Зловживання посадою"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        xlsx_bytes = buf.getvalue()
+
+        p_xlsx = parse_survey_file(xlsx_bytes, "survey.xlsx")
+        self.assertEqual(len(p_xlsx["answers"]), 5)
+        self.assertIn("Email", p_xlsx["dropped"])
+
+        # 3. Порівняння двох хвиль
+        res = compare(p_cp, p_xlsx, min_group=5)
+        self.assertFalse(res["hidden"])
+        self.assertEqual(len(res["questions"]), 2)
+
+        # Перевірка обов'язковості
+        q_yesno = next(q for q in res["questions"] if "корупцією" in q["question"])
+        self.assertTrue(q_yesno["is_mandatory"])
+        self.assertEqual(q_yesno["kind"], "choice")
+
+        # Перевірка нормалізації неінформативних відповідей
+        q_text = next(q for q in res["questions"] if "ризики" in q["question"])
+        self.assertFalse(q_text["is_mandatory"])
+        # Відповіді "-", ".", "немає", "відсутні" повинні бути відсіяні або нормалізовані
+        opt_names = [o["option"] for o in q_text["options"]]
+        self.assertTrue(all(ans not in {"-", ".", "немає", "відсутні"} for ans in opt_names))
+        self.assertIn("Відсутня відповідь / Не вказано", opt_names)
+
+        # 4. Експорт результатів у XLSX та Word
+        p_u002 = Profile.objects.get(code="U-002")
+        res["a"] = {"title": "Хвиля 1"}
+        res["b"] = {"title": "Хвиля 2"}
+        xlsx_out = survey_xlsx(res, p_u002)
+        self.assertTrue(xlsx_out.startswith(b"PK\x03\x04"))
+
+        docx_out = survey_docx(res, p_u002)
+        self.assertTrue(docx_out.startswith(b"PK\x03\x04"))
+
+    def test_measure_crud_lifecycle(self):
+        """Перевірка повного життєвого циклу заходу: створення, редагування, виключення/видалення."""
+        c = self.client_for("u-002")
+
+        # 1. Створення нового заходу
+        new_data = {
+            "section": "R1",
+            "content": "Створити новий канал повідомлень",
+            "unit": "P01",
+            "strok_text": "Постійно",
+            "strok_type": "postiino",
+            "indicator": "Кількість перевірок",
+            "indicator_unit": "шт.",
+            "indicator_target": 12,
+            "required_evidence": "Звіт",
+            "co_units": ["P02"],
+        }
+        r_create = c.post("/api/measures", new_data, format="json")
+        self.assertEqual(r_create.status_code, 201)
+        created_code = r_create.json()["code"]
+
+        m = Measure.objects.get(code=created_code)
+        self.assertEqual(m.content, "Створити новий канал повідомлень")
+        self.assertEqual(m.co_units.count(), 1)
+        self.assertTrue(AuditLog.objects.filter(action="створено захід", obj_id=created_code).exists())
+
+        # 2. Редагування заходу (PATCH)
+        r_patch = c.patch(
+            f"/api/measures/{created_code}",
+            {"content": "Оновлений зміст каналу повідомлень", "indicator_target": 15},
+            format="json",
+        )
+        self.assertEqual(r_patch.status_code, 200)
+        m.refresh_from_db()
+        self.assertEqual(m.content, "Оновлений зміст каналу повідомлень")
+        self.assertEqual(m.indicator_target, 15.0)
+        self.assertTrue(AuditLog.objects.filter(action="змінено захід", obj_id=created_code).exists())
+
+        # 3. Додавання незмінного підтвердження Evidence до заходу
+        ev = Evidence.objects.create(
+            code="E-TEST-01",
+            measure=m,
+            type="наказ",
+            title="Тестовий наказ",
+            doc_date=date(2026, 1, 1),
+            uploaded_at=date(2026, 1, 1),
+            sha256="0" * 64,
+        )
+
+        # 4. Спроба видалення без підстави -> має повернути 400 з requires_reason
+        r_del_fail = c.delete(f"/api/measures/{created_code}")
+        self.assertEqual(r_del_fail.status_code, 400)
+        self.assertTrue(r_del_fail.json().get("requires_reason"))
+
+        # 5. Виключення заходу з програми з вказанням підстави
+        r_exclude = c.delete(
+            f"/api/measures/{created_code}",
+            {"reason": "Наказ ректора від 18.09.2026 № 214-од"},
+            format="json",
+        )
+        self.assertEqual(r_exclude.status_code, 200)
+        self.assertEqual(r_exclude.json()["status"], "excluded")
+
+        m.refresh_from_db()
+        self.assertTrue(m.is_excluded)
+        self.assertIn("214-од", m.exclusion_reason)
+        self.assertTrue(AuditLog.objects.filter(action="виключено захід із програми", obj_id=created_code).exists())
+
+        # 6. Перевірка цілісності ланцюжка SHA-256 після всіх операцій
+        self.assertTrue(AuditLog.verify_chain()["ok"])
+
 
 

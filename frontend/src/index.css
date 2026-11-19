@@ -1953,3 +1953,136 @@ textarea { min-height: 110px; resize: vertical; }
     padding: .5rem .5rem;
   }
 }
+
+/* ================= Цифровий водяний знак (ІзОД / ДСК) ================= */
+.watermark-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 9998;
+  overflow: hidden;
+  opacity: 0.045;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.watermark-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-gap: 5rem 3rem;
+  transform: rotate(-25deg) scale(1.15);
+  width: 140vw;
+  height: 140vh;
+}
+
+.watermark-item {
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media print {
+  .watermark-overlay {
+    display: flex !important;
+    opacity: 0.12 !important;
+    z-index: 999999 !important;
+  }
+}
+
+/* ================= Опитування (Surveys) ================= */
+.survey-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .75rem;
+}
+
+.survey-q-title {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+  flex: 1 1 200px;
+}
+
+.survey-q-badge {
+  flex-shrink: 0;
+}
+
+.survey-chart-container {
+  width: 100%;
+  position: relative;
+}
+
+.survey-collapse-bar {
+  margin-top: .6rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.survey-visibility-box {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: .75rem;
+  margin-bottom: 1rem;
+}
+
+.survey-visibility-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: .5rem;
+  margin-top: .6rem;
+}
+
+.survey-check-label {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .86rem;
+  cursor: pointer;
+}
+
+.survey-export-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+}
+
+@media (max-width: 560px) {
+  .survey-visibility-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 320px) {
+  .survey-q-title {
+    font-size: 0.88rem;
+  }
+  .survey-chart-container {
+    overflow-x: hidden;
+  }
+  .survey-export-bar .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .survey-collapse-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .survey-collapse-bar button {
+    width: 100%;
+  }
+}

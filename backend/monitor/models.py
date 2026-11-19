@@ -177,6 +177,16 @@ class Measure(models.Model):
     indicator_target = models.FloatField(null=True, blank=True)
     required_evidence = models.CharField("Потрібні підтвердні матеріали", max_length=500, blank=True)
     resources = models.CharField(max_length=300, blank=True)
+    is_excluded = models.BooleanField("Виключено з програми", default=False)
+    exclusion_reason = models.CharField("Підстава виключення", max_length=500, blank=True)
+    excluded_at = models.DateTimeField(null=True, blank=True)
+    excluded_by = models.ForeignKey(
+        "Profile",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="excluded_measures",
+    )
 
     class Meta:
         ordering = ["section__number", "number"]
