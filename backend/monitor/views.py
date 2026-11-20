@@ -213,11 +213,14 @@ def period_dict(p: ReportingPeriod, today=None):
 def execution_dict(e: Execution | None):
     if not e:
         return None
+    approval_name = e.get_approval_display()
+    if not e.entered_at and e.approval == Execution.Approval.DRAFT:
+        approval_name = "не внесено"
     return {"status": e.status, "status_name": e.get_status_display(), "fact_date": e.fact_date,
             "result_text": e.result_text, "indicator_fact": e.indicator_fact,
             "formal_close_justification": getattr(e, "formal_close_justification", "") or "",
             "entered_by": e.entered_by.code if e.entered_by else None, "entered_at": e.entered_at,
-            "approval": e.approval, "approval_name": e.get_approval_display(),
+            "approval": e.approval, "approval_name": approval_name,
             "approved_by": e.approved_by.code if e.approved_by else None, "approved_at": e.approved_at}
 
 
@@ -437,12 +440,31 @@ def _bump_auth_rate(ip_key, user_key, ip_att, user_att):
         cache.set(user_key, user_att + 1, 60)
 
 
+def _check_chal_rate_limit(request):
+    """Обмеження кількості запитів на генерацію challenge: не більше 30 запитів на хвилину з одного IP."""
+    ip = _client_ip(request)
+    ip_hash = hashlib.sha256(ip.encode("utf-8")).hexdigest()[:32]
+    ip_key = f"auth_rate:chal:ip:{ip_hash}"
+    count = cache.get(ip_key, 0)
+    if count >= 30:
+        return False, ip_key, count
+    cache.set(ip_key, count + 1, 60)
+    return True, ip_key, count
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 @ensure_csrf_cookie
 def auth_challenge(request):
     """Генерація одноразового криптографічного виклику (Challenge) для входу за ключем (.key)."""
+    chal_ok, _, _ = _check_chal_rate_limit(request)
+    if not chal_ok:
+        return Response(
+            {"detail": "Забагато запитів на генерацію виклику. Спробуйте через хвилину."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
     raw_login = str(request.data.get("login") or request.data.get("username") or "")
     clean_login = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", "", raw_login).strip()
     safe_log_username = clean_login[:30] if clean_login else "unknown"
@@ -865,10 +887,30 @@ def unit_update(request, code):
     })
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 def periods(request):
-    profile(request)
     today = SystemSettings.today()
+    if request.method == "POST":
+        p = require(request, TECH | CONTENT_EDIT, "Звітні періоди створює технічний адміністратор або уповноважений.")
+        d = request.data or {}
+        year = _parse_int(d.get("year"), field="year", min_val=2020, max_val=2100)
+        quarter = _parse_int(d.get("quarter"), field="quarter", min_val=1, max_val=4)
+        code = f"{year}-Q{quarter}"
+        if ReportingPeriod.objects.filter(code=code).exists():
+            raise ValidationError({"code": f"Звітний період {code} вже існує."})
+        s = SystemSettings.get()
+        per = ReportingPeriod.make(year, quarter, window_days=s.window_days)
+        if d.get("window_start"):
+            per.window_start = _parse_date(d.get("window_start"), field="window_start")
+        if d.get("window_end"):
+            per.window_end = _parse_date(d.get("window_end"), field="window_end")
+        if per.window_end < per.window_start:
+            raise ValidationError({"window_end": "Кінець вікна не може бути раніше за початок."})
+        per.save()
+        AuditLog.write(p, f"створено звітний період {code}", "period", code, "created", "", f"{per.window_start}–{per.window_end}")
+        return Response(period_dict(per, today), status=status.HTTP_201_CREATED)
+
+    profile(request)
     return Response([period_dict(p, today) for p in ReportingPeriod.objects.all()])
 
 
@@ -1492,7 +1534,8 @@ def dashboard(request):
         "by_section": R.breakdown(period, snaps, "section"),
         "by_unit": units_map,
         "flags": {"total": len(flags), "by_code": dict(flag_counts),
-                  "catalog": {c["code"]: c["title"] for c in R.flag_catalog()}},
+                  "catalog": {c["code"]: c["title"] for c in R.flag_catalog()},
+                  "items": flags},
         "risks": risks,
         "upcoming": upcoming[:15],
         "critical": critical[:15],
@@ -2034,8 +2077,19 @@ def audit(request):
     require(request, AUDIT, "Журнал дій доступний уповноваженому, техадміністратору, керівнику та аналітику.")
     qs = AuditLog.objects.select_related("actor").order_by("-id")
     qs = _filter_audit_qs(qs, request.query_params)
-    limit = _parse_int(request.query_params.get("limit", 200), field="limit", min_val=1, max_val=2000)
-    return Response({"total": qs.count(), "items": [_audit_dict(a) for a in qs[:limit]]})
+    total = qs.count()
+    page = _parse_int(request.query_params.get("page", 1), field="page", min_val=1, max_val=100000)
+    page_size = _parse_int(request.query_params.get("page_size", request.query_params.get("limit", 50)), field="page_size", min_val=1, max_val=2000)
+    total_pages = max(1, (total + page_size - 1) // page_size) if total > 0 else 1
+    offset = (page - 1) * page_size
+    items = [_audit_dict(a) for a in qs[offset:offset + page_size]]
+    return Response({
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "items": items,
+    })
 
 
 @api_view(["GET"])

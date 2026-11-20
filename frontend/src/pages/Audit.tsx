@@ -13,6 +13,18 @@ const CATEGORIES = [
   { id: 'auth', label: 'Вхід / Вихід' },
 ]
 
+const OBJ_TYPE_MAP: Record<string, string> = {
+  korystuvach: 'Користувач',
+  vykonannia: 'Виконання',
+  zakhid: 'Захід',
+  kartka: 'Картка',
+  period: 'Період',
+  audit: 'Аудит',
+  system: 'Система',
+  pidrozdil: 'Підрозділ',
+  zvit: 'Звіт',
+}
+
 function ActionBadge({ action }: { action: string }) {
   const act = (action || '').toLowerCase()
   if (act.includes('перегляд')) {
@@ -64,8 +76,17 @@ export default function Audit() {
   const emptyQ = { obj_id: '', actor: '', action: '', category: '' }
   const [q, setQ] = useState(emptyQ)
   const [applied, setApplied] = useState(emptyQ)
-  const qs = new URLSearchParams(Object.entries(applied).filter(([, v]) => v) as [string, string][]).toString()
-  const { data, error } = useApi<Any>(`audit?limit=300&${qs}`, [qs])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+
+  const filterParams = new URLSearchParams(Object.entries(applied).filter(([, v]) => v) as [string, string][])
+  const exportQs = filterParams.toString()
+
+  filterParams.set('page', String(page))
+  filterParams.set('page_size', String(pageSize))
+  const qs = filterParams.toString()
+
+  const { data, error } = useApi<Any>(`audit?${qs}`, [qs])
   const chain = useApi<Any>('audit/verify')
 
   if (error) return <ErrorBox msg={error} />
@@ -75,7 +96,22 @@ export default function Audit() {
     const next = { ...applied, category: catId }
     setQ(prev => ({ ...prev, category: catId }))
     setApplied(next)
+    setPage(1)
   }
+
+  const handleFilterSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setApplied(q)
+    setPage(1)
+  }
+
+  const handleReset = () => {
+    setQ(emptyQ)
+    setApplied(emptyQ)
+    setPage(1)
+  }
+
+  const totalPages = data?.total_pages || Math.max(1, Math.ceil((data?.total || 0) / pageSize))
 
   return (
     <>
@@ -83,7 +119,7 @@ export default function Audit() {
         <button
           type="button"
           className="btn secondary"
-          onClick={() => download(`audit/export${qs ? `?${qs}` : ''}`, 'zhurnal_dii.csv')}
+          onClick={() => download(`audit/export${exportQs ? `?${exportQs}` : ''}`, 'zhurnal_dii.csv')}
         >
           Експорт CSV
         </button>
@@ -114,10 +150,7 @@ export default function Audit() {
       <Card>
         <form
           className="filter-bar"
-          onSubmit={e => {
-            e.preventDefault()
-            setApplied(q)
-          }}
+          onSubmit={handleFilterSubmit}
         >
           <input
             placeholder="Обʼєкт (Z-17, E-001…)"
@@ -141,17 +174,14 @@ export default function Audit() {
             <button
               type="button"
               className="btn secondary small"
-              onClick={() => {
-                setQ(emptyQ)
-                setApplied(emptyQ)
-              }}
+              onClick={handleReset}
             >
               Скинути
             </button>
           )}
           {data && (
             <span className="muted" style={{ marginLeft: 'auto' }}>
-              записів: <b>{data.total}</b>
+              усього записів: <b>{data.total}</b>
             </span>
           )}
         </form>
@@ -203,7 +233,7 @@ export default function Audit() {
                         a.obj_id
                       )}
                       <br />
-                      <small className="muted">{a.obj_type}</small>
+                      <small className="muted">{OBJ_TYPE_MAP[a.obj_type] || a.obj_type}</small>
                     </td>
                     <td>{a.field ? <code>{a.field}</code> : <span className="muted">—</span>}</td>
                     <td style={{ minWidth: 180, maxWidth: 360 }}>
@@ -222,6 +252,54 @@ export default function Audit() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Пагінація журналу дій */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.75rem', marginTop: '1rem', paddingTop: '.75rem', borderTop: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.86rem', color: 'var(--muted)' }}>
+              <span>Показано {data.total > 0 ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, data.total)} із {data.total}</span>
+              <span style={{ margin: '0 .3rem' }}>•</span>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem' }}>
+                По рядків:
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    setPageSize(Number(e.target.value))
+                    setPage(1)
+                  }}
+                  style={{ padding: '.2rem .4rem', fontSize: '.84rem', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--line)' }}
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
+              <button
+                type="button"
+                className="btn secondary small"
+                disabled={page <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+              >
+                ‹ Попередня
+              </button>
+
+              <span style={{ padding: '0 .5rem', fontSize: '.86rem', fontWeight: 600 }}>
+                Сторінка {page} із {totalPages}
+              </span>
+
+              <button
+                type="button"
+                className="btn secondary small"
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              >
+                Наступна ›
+              </button>
+            </div>
           </div>
         </Card>
       )}

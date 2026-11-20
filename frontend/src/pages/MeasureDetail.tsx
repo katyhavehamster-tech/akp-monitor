@@ -113,7 +113,15 @@ export default function MeasureDetail() {
           <Pill tone={PORTAL_TONE[m.portal_state]}>
             {m.is_excluded ? 'Знято з контролю' : `Портал: ${m.portal_state}`}
           </Pill>
-          {m.execution && <Pill tone={APPROVAL_TONE[m.execution.approval]}>{m.execution.approval_name}</Pill>}
+          {m.execution ? (
+            m.execution.entered_at ? (
+              <Pill tone={APPROVAL_TONE[m.execution.approval]}>{m.execution.approval_name}</Pill>
+            ) : (
+              <Pill tone="warn">не внесено</Pill>
+            )
+          ) : (
+            <Pill tone="warn">не внесено</Pill>
+          )}
           <Pill tone={RISK_TONE[m.nonexecution_risk.level]}>ризик невиконання: {m.nonexecution_risk.level}</Pill>
         </div>
         <div style={{ marginTop: '.85rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -177,7 +185,7 @@ export default function MeasureDetail() {
           <dt>Строк за програмою</dt>
           <dd>
             {m.strok_text}
-            {m.strok_date && <> (до {fmtDate(m.strok_date)})</>}
+            {m.strok_date && !m.strok_text?.includes(fmtDate(m.strok_date)) && <> (до {fmtDate(m.strok_date)})</>}
             {m.postponed > 0 && (
               <>
                 {' '}
@@ -819,7 +827,11 @@ function ApprovalPanel({ m, period, onDone }: { m: Any; period: string; onDone: 
     <Card title="Погодження координатором (уповноваженою особою)">
       <p>
         Поточний статус виконання: <StatusPill s={m.status} /> · Погодження:{' '}
-        <Pill tone={APPROVAL_TONE[m.execution.approval]}>{m.execution.approval_name}</Pill>
+        {m.execution?.entered_at ? (
+          <Pill tone={APPROVAL_TONE[m.execution.approval]}>{m.execution.approval_name}</Pill>
+        ) : (
+          <Pill tone="warn">не внесено</Pill>
+        )}
       </p>
 
       {hasFormalClose && (
@@ -854,12 +866,14 @@ function ApprovalPanel({ m, period, onDone }: { m: Any; period: string; onDone: 
         </label>
       )}
 
-      <label className="f">
+      <label className="f" style={{ width: '100%' }}>
         Зауваження або мотив рішення
-        <input
+        <textarea
+          rows={2}
           value={comment}
           onChange={e => setComment(e.target.value)}
           placeholder="У разі повернення на доопрацювання або відхилення вкажіть зауваження"
+          style={{ width: '100%', resize: 'vertical' }}
         />
       </label>
       {err && <div className="alert danger">{err}</div>}
@@ -904,14 +918,15 @@ function DeadlinePanel({ m, onDone }: { m: Any; onDone: () => void }) {
       <div className="hint">
         Затверджений строк у програмі ({fmtDate(m.strok_date)}) залишається незмінним, переноситься лише внутрішній робочий строк.
       </div>
-      <div className="grid g2">
-        <label className="f">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '.85rem' }}>
+        <label className="f" style={{ maxWidth: 280 }}>
           Новий робочий строк
           <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
         </label>
-        <label className="f">
+        <label className="f" style={{ width: '100%' }}>
           Обґрунтування / службова записка
           <input
+            style={{ width: '100%' }}
             value={reason}
             onChange={e => setReason(e.target.value)}
             placeholder="Службова записка від 10.04.2026 №..."

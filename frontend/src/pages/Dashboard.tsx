@@ -58,7 +58,7 @@ export default function Dashboard() {
           {remLimit < data.reminders.length ? (
             <>
               <button className="btn secondary small" onClick={() => setRemLimit(prev => prev + 10)}>
-                Показати ще ({Math.min(10, data.reminders.length - remLimit)} із {data.reminders.length - remLimit})
+                Показати ще {Math.min(10, data.reminders.length - remLimit)} (показано {remLimit} із {data.reminders.length})
               </button>
               <button className="btn ghost small" onClick={() => setRemLimit(data.reminders.length)}>
                 Показати всі ({data.reminders.length})

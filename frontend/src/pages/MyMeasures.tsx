@@ -31,6 +31,23 @@ export default function MyMeasures() {
     {dash.data.reminders.length > 0 && <Card title="Нагадування">
       {dash.data.reminders.map((r: Any, i: number) => <div key={i} className={`alert ${r.level}`}>{r.text}</div>)}
     </Card>}
+    {(() => {
+      const unitFlags = (dash.data.flags?.items || []).filter((f: Any) => f.object === 'pidrozdil' || f.object === 'unit' || f.code === 'RF6')
+      if (!unitFlags.length) return null
+      return (
+        <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+          {unitFlags.map((f: Any, i: number) => (
+            <div key={i} className="alert warning" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: 0, padding: '.65rem 1rem', flexWrap: 'wrap', gap: '.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', minWidth: 0, flex: '1 1 auto' }}>
+                <span className="pill bad" style={{ fontWeight: 700, flexShrink: 0 }}>{f.code}</span>
+                <span style={{ fontSize: '.88rem' }}><b>{f.title}</b>: {f.explanation || f.rule || 'Сигнал рівня підрозділу'}</span>
+              </div>
+              <span className="muted" style={{ fontSize: '.82rem', flexShrink: 0 }}>Підрозділ: {profile?.unit?.code}</span>
+            </div>
+          ))}
+        </div>
+      )
+    })()}
     <Card title="Мої заходи">
       <div className="table-wrap"><table className="t"><thead><tr>
         <th>Код</th><th>Захід</th><th>Строк</th><th>Статус</th><th>Погодження</th><th>Підтв.</th><th>Сигнали</th><th></th>

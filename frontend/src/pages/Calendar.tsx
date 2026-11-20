@@ -6,7 +6,7 @@ import { Card, ErrorBox, Loading, Pill, StatusPill, useApi } from '../components
 const MONTHS = ['січень', 'лютий', 'березень', 'квітень', 'травень', 'червень', 'липень', 'серпень', 'вересень', 'жовтень', 'листопад', 'грудень']
 
 export default function CalendarPage() {
-  const { period, today } = useAuth()
+  const { period, today, profile } = useAuth()
   const nav = useNavigate()
   const { data, error } = useApi<Any[]>(period ? `calendar?period=${period}` : null, [period])
   if (error) return <ErrorBox msg={error} />
@@ -14,7 +14,7 @@ export default function CalendarPage() {
   const groups: Record<string, Any[]> = {}
   for (const i of data) { const k = i.date.slice(0, 7); (groups[k] ||= []).push(i) }
   return <>
-    <h1>Календар строків</h1>
+    <h1>{profile?.role === 'VYK' ? 'Строки і нагадування' : 'Календар строків'}</h1>
     <p className="muted">Строки заходів (з урахуванням внутрішніх перенесень), вікна внесення інформації і звітні дати. Робоча дата: {fmtDate(today)}.</p>
     <div className="grid g3">{Object.entries(groups).map(([k, items]) => {
       const [y, mm] = k.split('-')

@@ -5,6 +5,12 @@ import { useAuth } from '../auth'
 import { Card, ErrorBox, Loading, Pill, useApi } from '../components/ui'
 import { UnitModal } from '../components/UnitModal'
 
+const SEVERITY_MAP: Record<string, { label: string; tone: 'bad' | 'warn' | 'info' | 'grey' }> = {
+  high: { label: 'Високий', tone: 'bad' },
+  medium: { label: 'Середній', tone: 'warn' },
+  low: { label: 'Низький', tone: 'info' },
+}
+
 export default function Passport() {
   const { profile } = useAuth()
   const { data, error, reload } = useApi<Any>('program')
@@ -69,7 +75,7 @@ export default function Passport() {
             style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}
           >
             <PlusCircle size={15} />
-            <span>+ Новий підрозділ</span>
+            <span>Новий підрозділ</span>
           </button>
         )}
       </div>
@@ -141,7 +147,18 @@ export default function Passport() {
     {rules.data && <Card title="Явні правила системи (rules.yaml)">
       <p className="muted">Пороги і формулювання можна змінити без програміста. Висновки з наслідками система робить лише за цими правилами (п. 4 Політики використання ШІ).</p>
       <div className="table-wrap"><table className="t"><thead><tr><th>Код</th><th>Сигнал</th><th>Правило</th><th>Важливість</th></tr></thead><tbody>
-        {rules.data.flags.map((f: Any) => <tr key={f.code}><td><b>{f.code}</b></td><td>{f.title}</td><td><small>{f.rule}</small></td><td>{f.severity}</td></tr>)}
+        {rules.data.flags.map((f: Any) => <tr key={f.code}>
+          <td><b>{f.code}</b></td>
+          <td>{f.title}</td>
+          <td><small>{f.rule}</small></td>
+          <td>
+            {SEVERITY_MAP[f.severity] ? (
+              <span className={`pill ${SEVERITY_MAP[f.severity].tone}`}>{SEVERITY_MAP[f.severity].label}</span>
+            ) : (
+              f.severity
+            )}
+          </td>
+        </tr>)}
       </tbody></table></div>
       <h3 style={{ marginTop: '1rem' }}>Ризик невиконання заходу</h3>
       <ul>{Object.entries(rules.data.nonexecution_risk).filter(([k]) => k !== 'params').map(([k, v]: [string, Any]) =>

@@ -156,6 +156,10 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "monitor.views.custom_exception_handler",
     # параметр ?format= використовуємо для експорту (xlsx/csv/docx), а не для вибору рендерера DRF
     "URL_FORMAT_OVERRIDE": None,
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "60/minute",
+        "user": "300/minute",
+    },
 }
 
 SPECTACULAR_SETTINGS = {

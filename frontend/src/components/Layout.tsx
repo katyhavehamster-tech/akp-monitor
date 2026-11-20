@@ -111,11 +111,11 @@ export default function Layout() {
   const activeGroup = useMemo(() => {
     return groups.find(g => current && g.items.includes(current))
   }, [groups, current])
-  const section = activeGroup?.label
-  const sectionDefaultPath = activeGroup?.items[0]?.[0] || (role === 'VYK' ? '/my' : role === 'ADMIN' ? '/admin/users' : '/program/dashboard')
+  const section = role === 'VYK' && isDetailMeasure ? 'Мій кабінет' : activeGroup?.label
+  const sectionDefaultPath = role === 'VYK' ? '/my' : (activeGroup?.items[0]?.[0] || (role === 'ADMIN' ? '/admin/users' : '/program/dashboard'))
   const isDetailMeasure = loc.pathname.startsWith('/program/measures/') && loc.pathname !== '/program/measures'
   const detailCode = isDetailMeasure ? loc.pathname.split('/').pop() : null
-  const currentLabel = isDetailMeasure ? `Захід ${detailCode}` : (current?.[1] || 'АКП-Монітор')
+  const currentLabel = isDetailMeasure ? (role === 'VYK' ? (detailCode || '') : `Захід ${detailCode}`) : (current?.[1] || 'АКП-Монітор')
   const initials = (profile.unit?.code || profile.role).slice(0, 3)
   const showSidebarLabels = !collapsed || open
 
@@ -225,11 +225,11 @@ export default function Layout() {
             <>
               <button
                 type="button"
-                onClick={() => nav('/program/measures')}
+                onClick={() => nav(role === 'VYK' ? '/my' : '/program/measures')}
                 className="crumb-link hide-sm"
-                title="Повернутися до реєстру заходів"
+                title={role === 'VYK' ? 'Повернутися до моїх заходів' : 'Повернутися до реєстру заходів'}
               >
-                Реєстр заходів
+                {role === 'VYK' ? 'Мої заходи' : 'Реєстр заходів'}
               </button>
               <ChevronRight size={15} className="hide-sm" style={{ flexShrink: 0 }} />
             </>
@@ -237,11 +237,11 @@ export default function Layout() {
           <b className="crumb-current-title">{currentLabel}</b>
         </nav>
         <div className="tools">
-          {cur && <span className={`chip hide-sm ${cur.is_open ? 'open' : 'closed'}`}
+          {cur && <span className={`chip hide-md ${cur.is_open ? 'open' : 'closed'}`}
             title={`Вікно внесення ${cur.code}: ${fmtDate(cur.window_start)}–${fmtDate(cur.window_end)}`}>
             <i className="dot" />Вікно {cur.is_open ? 'відкрите' : 'закрите'}
           </span>}
-          {today && <span className="chip hide-sm" title="Робоча дата системи">{fmtDate(today)}</span>}
+          {today && <span className="chip hide-md" title="Робоча дата системи">{fmtDate(today)}</span>}
           <label className="select-wrap" title="Звітний період">
             <CalendarDays size={15} />
             <select value={period} onChange={e => setPeriod(e.target.value)} aria-label="Звітний період">

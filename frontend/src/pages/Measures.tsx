@@ -190,7 +190,7 @@ export default function Measures() {
         {canManage && (
           <button type="button" className="btn gold" onClick={() => setAdding(!adding)}>
             <PlusCircle size={15} style={{ marginRight: '.3rem' }} />
-            <span>{adding ? 'Закрити форму' : '+ Додати захід'}</span>
+            <span>{adding ? 'Закрити форму' : 'Додати захід'}</span>
           </button>
         )}
       </PageHead>

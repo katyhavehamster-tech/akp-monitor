@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, Download, KeyRound, Laptop, LogOut, Radio, RefreshCw, ShieldAlert, X } from 'lucide-react'
+import { CheckCircle2, Download, KeyRound, Laptop, LogOut, Radio, RefreshCw, ShieldAlert, X, CalendarDays, PlusCircle } from 'lucide-react'
 import { api, fmtDate, fmtDateTime, type Any } from '../api'
 import { useAuth } from '../auth'
 import { Card, ErrorBox, Loading, Pill, useApi } from '../components/ui'
@@ -16,8 +16,6 @@ export function AdminUsers() {
   const sys = useApi<Any>('settings')
   const [f, setF] = useState<Any>({ role: 'VYK' })
   const [ttlDays, setTtlDays] = useState(365)
-  const [sig1, setSig1] = useState('')
-  const [sig2, setSig2] = useState('')
   const [err, setErr] = useState('')
   const [pwFor, setPwFor] = useState<string | null>(null)
   const [delFor, setDelFor] = useState<string | null>(null)
@@ -32,13 +30,6 @@ export function AdminUsers() {
     fingerprint: string
     keyFile: KeyFileContainer
   } | null>(null)
-
-  useEffect(() => {
-    if (sys.data) {
-      setSig1(sys.data.signatory_name || '')
-      setSig2(sys.data.head_signatory_name || '')
-    }
-  }, [sys.data])
 
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
@@ -97,14 +88,6 @@ export function AdminUsers() {
     setErr(''); setOk('')
     try { await api(`users/${code}`, { method: 'PATCH', body }); setOk(`${code}: ${msg}`); reload(); sys.reload(); await reloadMe() } catch (e) { setErr((e as Error).message) }
   }
-  const saveSignatories = async () => {
-    setErr(''); setOk('')
-    try {
-      await api('settings', { method: 'PATCH', body: { signatory_name: sig1, head_signatory_name: sig2 } })
-      setOk('ПІБ підписантів для звітів (Друк та Word) успішно збережено!')
-      reload(); sys.reload(); await reloadMe()
-    } catch (e) { setErr((e as Error).message) }
-  }
   const removeUser = async (code: string) => {
     setErr(''); setOk('')
     try {
@@ -116,20 +99,6 @@ export function AdminUsers() {
   }
   return <>
     <h1>Користувачі та ролі</h1>
-    <Card title="Умовні реквізити підписантів для друкованих форм і звітів Word (ДСТУ 4163:2020)">
-      <div className="grid g3" style={{ alignItems: 'end' }}>
-        <label className="f">Уповноважена особа / головний спеціаліст (умовне Власне імʼя ПРІЗВИЩЕ)
-          <input value={sig1} onChange={e => setSig1(e.target.value)} placeholder="Олександр КОВАЛЕНКО" />
-        </label>
-        <label className="f">Керівник органу (умовне Власне імʼя ПРІЗВИЩЕ)
-          <input value={sig2} onChange={e => setSig2(e.target.value)} placeholder="Валерій СОКОЛОВ" />
-        </label>
-        <div style={{ marginBottom: '.85rem' }}>
-          <button type="button" className="btn" onClick={saveSignatories}>Зберегти реквізити</button>
-        </div>
-      </div>
-      <small className="muted">Облікові записи в системі знеособлені (описані лише кодом, роллю, підрозділом і посадою — без персональних даних). Умовні імена вище підставляються виключно у реквізит «Підпис» паперових і Word-звітів за ДСТУ 4163:2020.</small>
-    </Card>
 
     <Card title="Новий обліковий запис">
       <div className="grid g3" style={{ alignItems: 'end' }}>
@@ -274,28 +243,224 @@ export function AdminPeriods() {
   const periods = local || ctxPeriods
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+
+  // Обчислення запропонованого наступного року та кварталу
+  const lastP = periods[periods.length - 1]
+  const defYear = lastP ? (lastP.quarter === 4 ? lastP.year + 1 : lastP.year) : 2027
+  const defQuarter = lastP ? (lastP.quarter === 4 ? 1 : lastP.quarter + 1) : 1
+
+  const [newYear, setNewYear] = useState(defYear)
+  const [newQuarter, setNewQuarter] = useState(defQuarter)
+  const [customWs, setCustomWs] = useState('')
+  const [customWe, setCustomWe] = useState('')
+  const [busyAdd, setBusyAdd] = useState(false)
+
   const patch = async (code: string, body: Any) => {
     setErr(''); setOk('')
     try {
       const upd = await api(`periods/${code}`, { method: 'PATCH', body })
-      setLocal(periods.map(p => p.code === code ? upd : p)); setOk(`${code}: збережено.`); await reloadMe()
+      setLocal(periods.map(p => p.code === code ? upd : p)); setOk(`${code}: зміни успішно збережено.`); await reloadMe()
     } catch (e) { setErr((e as Error).message) }
   }
+
+  const createPeriod = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setErr(''); setOk(''); setBusyAdd(true)
+    try {
+      const created = await api('periods', {
+        method: 'POST',
+        body: {
+          year: newYear,
+          quarter: newQuarter,
+          window_start: customWs || undefined,
+          window_end: customWe || undefined,
+        },
+      })
+      setLocal([...periods, created])
+      setOk(`Звітний період ${created.code} успішно створено!`)
+      setShowAdd(false)
+      setCustomWs('')
+      setCustomWe('')
+      await reloadMe()
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusyAdd(false)
+    }
+  }
+
   return <>
-    <h1>Звітні вікна</h1>
-    <div className="hint">Виконавці вносять інформацію 4 рази на рік — протягом вікна (за замовчуванням 5 днів) після завершення кварталу. Поза вікном доступний лише перегляд;
-      уповноважений може вносити зміни будь-коли. Вікно можна відкрити позачергово (наприклад, для виправлень на вимогу координатора).</div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.75rem', marginBottom: '.75rem' }}>
+      <h1 style={{ margin: 0 }}>Звітні вікна</h1>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          setNewYear(defYear)
+          setNewQuarter(defQuarter)
+          setShowAdd(true)
+        }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem' }}
+      >
+        <PlusCircle size={16} />
+        <span>Додати звітний період</span>
+      </button>
+    </div>
+
+    <div className="hint">
+      Виконавці вносять інформацію 4 рази на рік — протягом вікна (за замовчуванням 5 днів) після завершення кварталу. Поза вікном доступний лише перегляд;
+      уповноважений може вносити зміни будь-коли. Вікно можна відкрити позачергово (наприклад, для виправлень на вимогу координатора).
+    </div>
+
     {err && <div className="alert danger">{err}</div>}
     {ok && <div className="alert success">{ok}</div>}
-    <Card><div className="table-wrap"><table className="t"><thead><tr><th>Період</th><th>Квартал</th><th>Початок вікна</th><th>Кінець вікна</th><th>Стан</th><th>Позачергово</th></tr></thead><tbody>
-      {periods.map(p => <tr key={p.code}>
-        <td><b>{p.code}</b></td><td>{fmtDate(p.start)} – {fmtDate(p.end)}</td>
-        <td><input type="date" defaultValue={p.window_start} onBlur={e => e.target.value !== p.window_start && patch(p.code, { window_start: e.target.value })} /></td>
-        <td><input type="date" defaultValue={p.window_end} onBlur={e => e.target.value !== p.window_end && patch(p.code, { window_end: e.target.value })} /></td>
-        <td>{p.is_open ? <Pill tone="ok">відкрите</Pill> : <Pill tone="grey">закрите</Pill>}</td>
-        <td><label className="row" style={{ gap: '.3rem' }}><input type="checkbox" checked={p.force_open} onChange={e => patch(p.code, { force_open: e.target.checked })} /> відкрити</label></td>
-      </tr>)}
-    </tbody></table></div></Card>
+
+    <Card>
+      <div className="table-wrap">
+        <table className="t">
+          <thead>
+            <tr>
+              <th>Період</th>
+              <th>Межі кварталу</th>
+              <th>Початок вікна</th>
+              <th>Кінець вікна</th>
+              <th>Стан</th>
+              <th>Позачергово</th>
+            </tr>
+          </thead>
+          <tbody>
+            {periods.map(p => (
+              <tr key={p.code}>
+                <td className="nowrap"><b>{p.code}</b></td>
+                <td className="nowrap">{fmtDate(p.start)} – {fmtDate(p.end)}</td>
+                <td className="nowrap">
+                  <input
+                    type="date"
+                    defaultValue={p.window_start}
+                    onBlur={e => e.target.value !== p.window_start && patch(p.code, { window_start: e.target.value })}
+                  />
+                  <div className="muted" style={{ fontSize: '.76rem', marginTop: '2px' }}>{fmtDate(p.window_start)}</div>
+                </td>
+                <td className="nowrap">
+                  <input
+                    type="date"
+                    defaultValue={p.window_end}
+                    onBlur={e => e.target.value !== p.window_end && patch(p.code, { window_end: e.target.value })}
+                  />
+                  <div className="muted" style={{ fontSize: '.76rem', marginTop: '2px' }}>{fmtDate(p.window_end)}</div>
+                </td>
+                <td className="nowrap">{p.is_open ? <Pill tone="ok">відкрите</Pill> : <Pill tone="grey">закрите</Pill>}</td>
+                <td className="nowrap">
+                  <label className="row" style={{ gap: '.3rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={p.force_open}
+                      onChange={e => patch(p.code, { force_open: e.target.checked })}
+                    />
+                    відкрити
+                  </label>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+
+    {/* Модальне вікно додавання звітного періоду */}
+    {showAdd && (
+      <div className="modal-backdrop" onClick={() => !busyAdd && setShowAdd(false)}>
+        <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-head">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', minWidth: 0 }}>
+              <CalendarDays size={20} className="muted" />
+              <h3 style={{ margin: 0 }}>Створити звітний період</h3>
+            </div>
+            <button
+              type="button"
+              className="modal-close-btn"
+              disabled={busyAdd}
+              onClick={() => setShowAdd(false)}
+              aria-label="Закрити"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <form onSubmit={createPeriod}>
+            <div className="modal-body">
+              <div className="grid g2">
+                <label className="f">
+                  Рік
+                  <input
+                    type="number"
+                    min={2020}
+                    max={2040}
+                    value={newYear}
+                    onChange={e => setNewYear(Number(e.target.value))}
+                    required
+                  />
+                </label>
+                <label className="f">
+                  Квартал
+                  <select
+                    value={newQuarter}
+                    onChange={e => setNewQuarter(Number(e.target.value))}
+                  >
+                    <option value={1}>1 квартал (Q1)</option>
+                    <option value={2}>2 квартал (Q2)</option>
+                    <option value={3}>3 квартал (Q3)</option>
+                    <option value={4}>4 квартал (Q4)</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="hint" style={{ fontSize: '.84rem', margin: 0 }}>
+                Код періоду: <b>{newYear}-Q{newQuarter}</b>. Дати вікна внесення розраховуються автоматично (5 днів після кварталу) або можуть бути налаштовані вручну нижче.
+              </div>
+
+              <div className="grid g2">
+                <label className="f">
+                  Початок вікна (опціонально)
+                  <input
+                    type="date"
+                    value={customWs}
+                    onChange={e => setCustomWs(e.target.value)}
+                  />
+                </label>
+                <label className="f">
+                  Кінець вікна (опціонально)
+                  <input
+                    type="date"
+                    value={customWe}
+                    onChange={e => setCustomWe(e.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={busyAdd}
+                onClick={() => setShowAdd(false)}
+              >
+                Скасувати
+              </button>
+              <button
+                type="submit"
+                className="btn"
+                disabled={busyAdd}
+              >
+                {busyAdd ? 'Створення…' : 'Створити період'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
   </>
 }
 
@@ -352,7 +517,7 @@ export function AdminSystem() {
         <label className="f">Власне імʼя та ПРІЗВИЩЕ керівника органу (для підпису при Друці та у Word)
           <input value={sig2} onChange={e => setSig2(e.target.value)} placeholder="Валерій СОКОЛОВ" /></label>
         <div className="row" style={{ marginBottom: '.6rem' }}>
-          <button className="btn" onClick={() => save({ signatory_name: sig1, head_signatory_name: sig2 })}>Зберегти реквізити підписантів</button>
+          <button className="btn" onClick={() => save({ signatory_name: sig1, head_signatory_name: sig2 })}>Зберегти системні налаштування</button>
         </div>
         {msg && <div className="alert success">{msg}</div>}
         <small className="muted">Кожна зміна налаштувань фіксується в журналі дій і автоматично підтягується під час друку та експорту Word-файлів.</small>
@@ -722,12 +887,12 @@ export function AdminKeys() {
         /* Секція моніторингу активних сесій */
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.75rem', marginBottom: '1rem', paddingBottom: '.75rem', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '1.05rem', fontWeight: 700 }}>
                 Моніторинг активних сеансів
               </span>
               {sessionsData && (
-                <span className="pill info" style={{ fontSize: '.78rem', fontWeight: 600 }}>
+                <span className="pill info" style={{ fontSize: '.78rem', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
                   Онлайн: <b>{sessionsData.online_count}</b> з {sessionsData.total_count}
                 </span>
               )}

@@ -508,7 +508,8 @@ footer .wrap, .wrap { max-width: 1400px; margin: 0 auto; }
   padding: .12rem .62rem;
   font-size: .8rem;
   font-weight: 500;
-  white-space: nowrap;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
   max-width: 100%;
   border: 1px solid transparent;
 }
@@ -967,6 +968,7 @@ textarea { min-height: 110px; resize: vertical; }
   .span2-lg { grid-column: span 2; }
 }
 @media (max-width: 1150px) {
+  .hide-md { display: none !important; }
   .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .g3 > :last-child:nth-child(odd) { grid-column: 1 / -1; }

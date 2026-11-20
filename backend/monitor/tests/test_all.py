@@ -1225,6 +1225,58 @@ class OwaspSecurityTests(Base):
         self.assertEqual(auth_c.get("/api/docs/").status_code, 200)
         self.assertEqual(auth_c.get("/api/schema/").status_code, 200)
 
+    def test_auth_challenge_rate_limiting(self):
+        """Перевірка Rate Limiting на /api/auth/challenge (429 при спамі)."""
+        anon = APIClient()
+        cache.clear()
+        # Робимо 30 запитів
+        for i in range(30):
+            r = anon.post("/api/auth/challenge", {"login": "u-001"})
+            self.assertEqual(r.status_code, 200)
+        # 31-й запит має отримати 429 Too Many Requests
+        r_exceed = anon.post("/api/auth/challenge", {"login": "u-001"})
+        self.assertEqual(r_exceed.status_code, 429)
+        self.assertIn("Забагато запитів", r_exceed.json()["detail"])
+        cache.clear()
+
+    def test_audit_pagination(self):
+        """Перевірка посторінкової пагінації в /api/audit."""
+        c = self.client_for("u-002")
+        r = c.get("/api/audit?page=1&page_size=10")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertIn("page", data)
+        self.assertIn("page_size", data)
+        self.assertIn("total_pages", data)
+        self.assertEqual(data["page"], 1)
+        self.assertEqual(data["page_size"], 10)
+        self.assertLessEqual(len(data["items"]), 10)
+
+    def test_create_reporting_period(self):
+        """Перевірка створення звітного періоду через POST /api/periods."""
+        admin_c = self.client_for("u-001")
+        r = admin_c.post("/api/periods", {"year": 2028, "quarter": 1})
+        self.assertEqual(r.status_code, 201)
+        data = r.json()
+        self.assertEqual(data["code"], "2028-Q1")
+        # Повторна спроба створення того ж періоду має повернути 400
+        r_dup = admin_c.post("/api/periods", {"year": 2028, "quarter": 1})
+        self.assertEqual(r_dup.status_code, 400)
+
+    def test_unsubmitted_execution_status(self):
+        """Перевірка відображення 'не внесено' для незаповнених заходів."""
+        m = Measure.objects.first()
+        per = ReportingPeriod.objects.first()
+        ex, _ = Execution.objects.get_or_create(measure=m, period=per, defaults={"approval": "draft", "entered_at": None})
+        ex.entered_at = None
+        ex.approval = "draft"
+        ex.save()
+        c = self.client_for("u-002")
+        r = c.get(f"/api/measures/{m.code}?period={per.code}")
+        self.assertEqual(r.status_code, 200)
+        m_data = r.json()
+        self.assertEqual(m_data["execution"]["approval_name"], "не внесено")
+
 
 
 

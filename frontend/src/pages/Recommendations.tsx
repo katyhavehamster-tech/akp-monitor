@@ -7,6 +7,14 @@ import { Card, ErrorBox, Loading, Pill, useApi } from '../components/ui'
 const PR: Record<number, [string, string]> = { 1: ['високий', 'bad'], 2: ['середній', 'warn'], 3: ['низький', 'grey'] }
 const ST: Record<string, string> = { proposed: 'info', accepted: 'gold', rejected: 'grey', done: 'ok' }
 
+function pluralSignals(count: number): string {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return `${count} сигнал`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${count} сигнали`
+  return `${count} сигналів`
+}
+
 export default function Recommendations() {
   const { period } = useAuth()
   const { data, error, reload } = useApi<Any>(period ? `recommendations?period=${period}` : null, [period])
@@ -38,7 +46,7 @@ function Rec({ r, units, canDecide, onDone }: { r: Any; units: Any[]; canDecide:
       {!r.still_relevant && <Pill tone="ok">підстава більше не діє</Pill>}
     </div>
     {r.decision_comment && <p><small>Коментар: {r.decision_comment}</small></p>}
-    <details style={{ marginTop: '.5rem' }}><summary className="muted">Підстави ({r.basis.flags?.length || 0} сигналів): {r.title}</summary>
+    <details style={{ marginTop: '.5rem' }}><summary className="muted">Підстави ({pluralSignals(r.basis.flags?.length || 0)}): {r.title}</summary>
       <ul>{r.basis.flags?.map((f: Any, i: number) => <li key={i}><small><b>{f.code}</b> {f.object === 'zakhid' ? <Link to={`/program/measures/${f.id}`}>{f.id}</Link> : f.id}: {f.explanation}</small></li>)}</ul>
     </details>
     {canDecide && (r.state === 'proposed' || r.state === 'accepted') && <div style={{ marginTop: '.5rem' }}>
@@ -50,8 +58,11 @@ function Rec({ r, units, canDecide, onDone }: { r: Any; units: Any[]; canDecide:
           <option value="">—</option>{units.map(u => <option key={u.code} value={u.code}>{u.code} {u.name}</option>)}</select></label>
         <label className="f">Строк<input type="date" onChange={e => setF({ ...f, due_date: e.target.value })} /></label>
         <label className="f">Коментар<input onChange={e => setF({ ...f, comment: e.target.value })} /></label>
-        <div className="row" style={{ marginBottom: '.75rem' }}><button className="btn small" onClick={() => decide('accepted')}>Прийняти</button>
-          <button className="btn small danger" onClick={() => decide('rejected')}>Відхилити</button></div>
+        <div className="row" style={{ marginBottom: '.75rem', gap: '.4rem' }}>
+          <button className="btn small" onClick={() => decide('accepted')}>Прийняти</button>
+          <button className="btn small danger" onClick={() => decide('rejected')}>Відхилити</button>
+          <button type="button" className="btn small ghost" onClick={() => setOpen(false)}>Скасувати</button>
+        </div>
       </div>}
       {err && <div className="alert danger">{err}</div>}
     </div>}
