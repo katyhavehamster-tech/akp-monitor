@@ -199,7 +199,9 @@ def unit_dict(u):
 
 
 def profile_dict(p: Profile):
-    return {"id": p.id, "code": p.code, "role": p.role, "role_name": p.get_role_display(),
+    normalized_role = "AUDIT" if p.role in ("AUDIT", "ANAL") else p.role
+    normalized_role_name = "Внутрішній аудитор" if p.role in ("AUDIT", "ANAL") else p.get_role_display()
+    return {"id": p.id, "code": p.code, "role": normalized_role, "role_name": normalized_role_name,
             "unit": unit_dict(p.unit), "position": p.position, "username": p.user.username,
             "is_active": p.user.is_active}
 

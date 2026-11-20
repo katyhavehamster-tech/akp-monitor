@@ -90,6 +90,14 @@ const CABINET: Record<Role, string> = {
   KER: 'Кабінет керівника', AUDIT: 'Кабінет внутрішнього аудитора',
 }
 
+const ROLE_TITLE: Record<Role, string> = {
+  KOORD: 'Уповноважений',
+  ADMIN: 'Технічний адміністратор',
+  KER: 'Керівник',
+  VYK: 'Виконавець',
+  AUDIT: 'Внутрішній аудитор',
+}
+
 export default function Layout() {
   const { profile, today, periods, period, setPeriod, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -262,7 +270,7 @@ export default function Layout() {
               type="button"
               className="header-account-btn"
               onClick={() => setUserMenuOpen(v => !v)}
-              title={`${CABINET[role]} · ${profile.code}`}
+              title={`${ROLE_TITLE[role] || CABINET[role]} · ${profile.code}`}
               aria-label="Обліковий запис"
               aria-expanded={userMenuOpen}
             >
@@ -277,7 +285,7 @@ export default function Layout() {
                   <div className="user-popover-head">
                     <div className="avatar">{initials}</div>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <b>{CABINET[role]} · {profile.code}</b>
+                      <b>{ROLE_TITLE[role] || profile.role_name || CABINET[role]} · {profile.code}</b>
                       {profile.unit && <small>{profile.unit.code} · {profile.unit.name}</small>}
                       {profile.position && <small>{profile.position}</small>}
                     </div>

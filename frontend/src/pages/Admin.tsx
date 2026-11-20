@@ -887,12 +887,23 @@ export function AdminKeys() {
         /* Секція моніторингу активних сесій */
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.75rem', marginBottom: '1rem', paddingBottom: '.75rem', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '.5rem', flexWrap: 'wrap', minWidth: 0 }}>
+              <span style={{ fontSize: '1.05rem', fontWeight: 700, wordBreak: 'normal' }}>
                 Моніторинг активних сеансів
               </span>
               {sessionsData && (
-                <span className="pill info" style={{ fontSize: '.78rem', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                <span
+                  className="pill info"
+                  style={{
+                    fontSize: '.78rem',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    display: 'inline-flex',
+                    minWidth: 'max-content',
+                    wordBreak: 'keep-all',
+                  }}
+                >
                   Онлайн: <b>{sessionsData.online_count}</b> з {sessionsData.total_count}
                 </span>
               )}

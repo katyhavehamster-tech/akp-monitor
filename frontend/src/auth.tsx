@@ -33,7 +33,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!getToken()) { setReady(true); return }
     try {
       const me = await api('auth/me')
-      setProfile(me.profile)
+      const p = me.profile
+      if (p && ((p.role as string) === 'ANAL' || p.role === 'AUDIT')) {
+        p.role = 'AUDIT'
+        p.role_name = 'Внутрішній аудитор'
+      }
+      setProfile(p)
       setToday(me.today)
       setPeriod(prev => prev || me.current_period.code)
       setPeriods(await api('periods'))
