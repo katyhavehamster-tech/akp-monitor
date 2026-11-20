@@ -12,6 +12,21 @@ import {
   CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, Loading, Pill,
 } from '../components/ui'
 
+const DEFAULT_SECTION_INFO: Record<string, { number: number; name: string }> = {
+  R1: {
+    number: 1,
+    name: 'Заходи з реалізації засад загальної відомчої політики, виконання антикорупційної стратегії та державної антикорупційної програми',
+  },
+  R2: {
+    number: 2,
+    name: 'Заходи з усунення корупційних ризиків',
+  },
+  R3: {
+    number: 3,
+    name: 'Навчання та заходи з поширення антикорупційної інформації',
+  },
+}
+
 export default function PublicPortal() {
   const { theme, toggleTheme } = useTheme()
   const [data, setData] = useState<Any | null>(null)
@@ -88,30 +103,56 @@ export default function PublicPortal() {
 
   const sectionChartData = useMemo(() => {
     if (!items.length) return []
-    const secMap: Record<string, { code: string; name: string; shortName: string; total: number; done: number; inProgress: number; notDue: number; failed: number }> = {}
+    const secMap: Record<string, {
+      code: string
+      number: number
+      name: string
+      shortName: string
+      fullName: string
+      total: number
+      done: number
+      inProgress: number
+      notDue: number
+      failed: number
+    }> = {}
 
-    if (data?.sections) {
-      data.sections.forEach((s: Any) => {
-        secMap[s.code] = {
-          code: s.code,
-          name: s.name,
-          shortName: `Розділ ${s.number || s.code.replace('R', '')}`,
-          total: 0,
-          done: 0,
-          inProgress: 0,
-          notDue: 0,
-          failed: 0,
-        }
-      })
-    }
+    // Ініціалізація з API (data.sections) або довідника програми
+    const knownSections = (data?.sections && data.sections.length > 0)
+      ? data.sections
+      : Object.entries(DEFAULT_SECTION_INFO).map(([code, info]) => ({
+          code,
+          number: info.number,
+          name: info.name,
+        }))
+
+    knownSections.forEach((s: Any) => {
+      const num = s.number || parseInt(String(s.code).replace(/\D/g, ''), 10) || 1
+      const secName = s.name || DEFAULT_SECTION_INFO[s.code]?.name || s.code
+      secMap[s.code] = {
+        code: s.code,
+        number: num,
+        name: secName,
+        shortName: `Розділ ${num}`,
+        fullName: `Розділ ${num} (${secName})`,
+        total: 0,
+        done: 0,
+        inProgress: 0,
+        notDue: 0,
+        failed: 0,
+      }
+    })
 
     items.forEach(i => {
       const code = i.section || 'R1'
       if (!secMap[code]) {
+        const num = parseInt(String(code).replace(/\D/g, ''), 10) || 1
+        const secName = i.section_name || DEFAULT_SECTION_INFO[code]?.name || code
         secMap[code] = {
           code,
-          name: i.section_name || code,
-          shortName: `Розділ ${code.replace('R', '')}`,
+          number: num,
+          name: secName,
+          shortName: `Розділ ${num}`,
+          fullName: `Розділ ${num} (${secName})`,
           total: 0,
           done: 0,
           inProgress: 0,
@@ -126,7 +167,7 @@ export default function PublicPortal() {
       else if (i.status === 'ne_vykonano') secMap[code].failed += 1
     })
 
-    return Object.values(secMap).map(s => ({
+    return Object.values(secMap).sort((a, b) => a.number - b.number).map(s => ({
       ...s,
       percentDone: s.total > 0 ? Math.round((s.done / s.total) * 100) : 0,
     }))
@@ -418,9 +459,24 @@ export default function PublicPortal() {
                             tickLine={false}
                           />
                           <Tooltip
-                            contentStyle={CHART_TOOLTIP_STYLE}
+                            contentStyle={{
+                              ...CHART_TOOLTIP_STYLE,
+                              maxWidth: 320,
+                              whiteSpace: 'normal',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.35,
+                            }}
                             itemStyle={CHART_ITEM_STYLE}
-                            labelStyle={CHART_LABEL_STYLE}
+                            labelStyle={{
+                              ...CHART_LABEL_STYLE,
+                              fontWeight: 700,
+                              marginBottom: 6,
+                              lineHeight: 1.3,
+                            }}
+                            labelFormatter={(_label, payload) => {
+                              const item = payload?.[0]?.payload
+                              return item?.fullName || _label
+                            }}
                             cursor={{ fill: 'var(--surface-2)', opacity: 0.5 }}
                           />
                           <RBar dataKey="done" name="Виконано" stackId="sec" fill="#16a34a" />
@@ -438,10 +494,10 @@ export default function PublicPortal() {
                               key={sec.code}
                               className={`public-portal-sec-prog-item ${isSelected ? 'active' : ''}`}
                               onClick={() => setSectionFilter(isSelected ? '' : sec.code)}
-                              title={`Фільтрувати за розділом: ${sec.name}`}
+                              title={`Фільтрувати за розділом: ${sec.fullName}`}
                             >
                               <div className="public-portal-sec-prog-head">
-                                <span className="public-portal-sec-prog-name">{sec.shortName}</span>
+                                <span className="public-portal-sec-prog-name">{sec.fullName}</span>
                                 <span className="public-portal-sec-prog-val">
                                   <b>{sec.done}</b>/{sec.total} ({sec.percentDone}%)
                                 </span>
@@ -495,9 +551,19 @@ export default function PublicPortal() {
                 aria-label="Фільтр за розділом"
               >
                 <option value="">Усі розділи</option>
-                <option value="R1">Розділ 1 — Загальна політика</option>
-                <option value="R2">Розділ 2 — Усунення ризиків</option>
-                <option value="R3">Розділ 3 — Навчання</option>
+                {sectionChartData.length > 0 ? (
+                  sectionChartData.map(sec => (
+                    <option key={sec.code} value={sec.code}>
+                      {sec.fullName}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="R1">Розділ 1 ({DEFAULT_SECTION_INFO.R1.name})</option>
+                    <option value="R2">Розділ 2 ({DEFAULT_SECTION_INFO.R2.name})</option>
+                    <option value="R3">Розділ 3 ({DEFAULT_SECTION_INFO.R3.name})</option>
+                  </>
+                )}
               </select>
 
               <select

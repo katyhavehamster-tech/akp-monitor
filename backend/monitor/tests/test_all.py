@@ -278,10 +278,11 @@ class Security(Base):
         self.assertTrue(bool(token))
         self.assertIn("csrftoken", anon.cookies)
 
-        # 2. /api/public/overview також видає csrftoken
+        # 2. /api/public/overview також видає csrftoken та довідник розділів
         r_ov = anon.get("/api/public/overview")
         self.assertEqual(r_ov.status_code, 200)
         self.assertIn("csrfToken", r_ov.json())
+        self.assertIn("sections", r_ov.json())
 
         # 3. Вхід за логіном/паролем із передачею X-CSRFToken
         r_login = anon.post("/api/auth/login", {

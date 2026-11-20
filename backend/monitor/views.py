@@ -299,6 +299,10 @@ def public_overview(request):
     pr = Program.objects.select_related("organ", "coordinator_unit").first()
     cur_p = default_period()
     total_measures = Measure.objects.filter(is_excluded=False).count()
+    sections = [
+        {"code": sec.code, "number": sec.number, "name": sec.portal_name}
+        for sec in (pr.sections.all() if pr else [])
+    ]
     return Response({
         "ok": True,
         "csrfToken": get_token(request),
@@ -313,6 +317,7 @@ def public_overview(request):
         },
         "period": cur_p.code if cur_p else None,
         "total_measures": total_measures,
+        "sections": sections,
     })
 
 
