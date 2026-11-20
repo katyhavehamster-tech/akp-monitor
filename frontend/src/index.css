@@ -2300,12 +2300,60 @@ textarea { min-height: 110px; resize: vertical; }
 }
 
 @media (max-width: 480px) {
+  .modal-backdrop,
+  .modal-overlay {
+    padding: 0.5rem !important;
+    align-items: flex-start !important;
+    overflow-y: auto !important;
+  }
+  .modal,
   .modal-card {
     padding: 0.85rem !important;
     border-radius: 8px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    margin: auto 0 !important;
   }
+  .modal-head {
+    margin-bottom: 0.75rem !important;
+    padding-bottom: 0.5rem !important;
+    gap: 0.5rem !important;
+  }
+  .modal-head h3,
   .modal-card h3 {
-    font-size: 1rem !important;
+    font-size: 0.98rem !important;
+    line-height: 1.25 !important;
+    word-break: break-word !important;
+  }
+  .modal .hint {
+    padding: 0.65rem 0.75rem !important;
+    font-size: 0.8rem !important;
+    line-height: 1.4 !important;
+    word-break: break-word !important;
+  }
+  .modal-actions {
+    margin-top: 1rem !important;
+    padding-top: 0.75rem !important;
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+  }
+  .modal-actions button,
+  .modal-actions .btn {
+    width: 100% !important;
+    margin: 0 !important;
+    text-align: center !important;
+    justify-content: center !important;
+    font-size: 0.85rem !important;
+    padding: 0.6rem 0.75rem !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
+  }
+  .modal code {
+    word-break: break-all !important;
+    font-size: 0.76rem !important;
+    white-space: normal !important;
   }
   .measure-fact-summary-box {
     padding: 0.65rem 0.75rem !important;
@@ -2324,8 +2372,26 @@ textarea { min-height: 110px; resize: vertical; }
 }
 
 @media (max-width: 320px) {
+  .modal-backdrop,
+  .modal-overlay {
+    padding: 0.25rem !important;
+  }
+  .modal,
   .modal-card {
-    padding: 0.6rem !important;
+    padding: 0.65rem 0.5rem !important;
+    border-radius: 6px !important;
+    margin: 0.25rem 0 !important;
+  }
+  .modal-head h3,
+  .modal-card h3 {
+    font-size: 0.88rem !important;
+  }
+  .modal-body {
+    gap: 0.65rem !important;
+  }
+  .modal .hint {
+    padding: 0.5rem 0.55rem !important;
+    font-size: 0.75rem !important;
   }
   .modal-card form button {
     width: 100%;
@@ -2336,6 +2402,265 @@ textarea { min-height: 110px; resize: vertical; }
   }
   .measure-opys-preview {
     font-size: 0.76rem !important;
+  }
+}
+
+/* ==========================================================================
+   Дворівневий прогрес: Адаптивна верстка (від десктопу до ультра-вузьких <= 280px)
+   ========================================================================== */
+.two-level-progress-card {
+  margin-bottom: 1.25rem;
+  padding: 1.15rem 1.35rem;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.two-level-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.95rem;
+}
+
+.two-level-card-title-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.two-level-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.two-level-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.two-level-subtitle {
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.two-level-rules-badge {
+  font-size: 0.75rem !important;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.two-level-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
+.two-level-box {
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  padding: 0.95rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.two-level-metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.two-level-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  min-width: 0;
+  flex: 1 1 120px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.two-level-metric-percent {
+  font-size: 1.3rem;
+  font-weight: 800;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  line-height: 1;
+  margin-left: auto;
+}
+
+.two-level-metric-percent.ok {
+  color: var(--ok, #16a34a);
+}
+
+.two-level-metric-percent.accent {
+  color: var(--accent, #3b82f6);
+}
+
+.two-level-bar-track {
+  height: 9px;
+  border-radius: 5px;
+  background: var(--line, rgba(255, 255, 255, 0.1));
+  overflow: hidden;
+  margin: 0.55rem 0;
+}
+
+.two-level-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.two-level-bar-fill.ok {
+  background: var(--ok, #16a34a);
+}
+
+.two-level-bar-fill.accent {
+  background: var(--accent, #3b82f6);
+}
+
+.two-level-metric-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.two-level-status-tag {
+  white-space: nowrap;
+  font-size: 0.74rem;
+  opacity: 0.9;
+}
+
+.two-level-gap-box {
+  margin-top: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  box-sizing: border-box;
+}
+
+.two-level-gap-box.warning {
+  background: rgba(234, 88, 12, 0.08);
+  border-color: rgba(234, 88, 12, 0.3);
+}
+
+.two-level-gap-text {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  flex: 1 1 180px;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.two-level-gap-val.gap-warn {
+  color: #ea580c;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.two-level-gap-val.gap-ok {
+  color: var(--ok, #16a34a);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.two-level-gap-btn {
+  font-size: 0.78rem !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Адаптація для мобільних екранів (max-width: 480px) */
+@media (max-width: 480px) {
+  .two-level-progress-card {
+    padding: 0.85rem 0.75rem !important;
+  }
+  .two-level-title {
+    font-size: 0.98rem;
+  }
+  .two-level-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .two-level-box {
+    padding: 0.75rem 0.65rem !important;
+  }
+  .two-level-metric-label {
+    font-size: 0.82rem;
+  }
+  .two-level-metric-percent {
+    font-size: 1.15rem;
+  }
+  .two-level-metric-sub {
+    font-size: 0.73rem;
+  }
+  .two-level-gap-box {
+    padding: 0.55rem 0.65rem !important;
+  }
+  .two-level-gap-text {
+    font-size: 0.77rem;
+  }
+  .two-level-gap-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Адаптація для ультра-вузьких екранів (max-width: 320px, зокрема 266px) */
+@media (max-width: 320px) {
+  .two-level-progress-card {
+    padding: 0.65rem 0.45rem !important;
+    border-radius: 8px !important;
+  }
+  .two-level-card-title-group {
+    flex: 1 1 100%;
+  }
+  .two-level-title {
+    font-size: 0.88rem;
+  }
+  .two-level-subtitle {
+    font-size: 0.72rem;
+  }
+  .two-level-box {
+    padding: 0.6rem 0.45rem !important;
+  }
+  .two-level-metric-percent {
+    font-size: 1.05rem;
+  }
+  .two-level-status-tag {
+    white-space: normal;
+  }
+  .two-level-gap-btn {
+    width: 100%;
+    justify-content: center;
+    font-size: 0.74rem !important;
   }
 }
 

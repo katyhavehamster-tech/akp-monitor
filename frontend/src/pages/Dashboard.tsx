@@ -62,82 +62,77 @@ export default function Dashboard() {
     </Card>}
 
     {/* Дворівневий прогрес: Формальне виконання vs Реальне зниження ризиків */}
-    <div className="card two-level-progress-card" style={{ marginBottom: '1.25rem', padding: '1.2rem 1.4rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-          <Layers size={20} style={{ color: 'var(--accent)' }} />
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700 }}>
+    <div className="card two-level-progress-card">
+      <div className="two-level-card-header">
+        <div className="two-level-card-title-group">
+          <Layers size={20} className="two-level-icon" />
+          <div style={{ minWidth: 0 }}>
+            <h2 className="two-level-title">
               Дворівневий прогрес: Формальне закриття vs Зниження ризиків
             </h2>
-            <div className="muted" style={{ fontSize: '.8rem', marginTop: '.15rem' }}>
+            <div className="muted two-level-subtitle">
               Порівняльний аналіз звітних статусів та фактичного впливу на корупційні фактори за Методологією НАЗК № 830/21
             </div>
           </div>
         </div>
-        <div className="pill info" style={{ fontSize: '.78rem', fontWeight: 600 }}>
+        <div className="pill info two-level-rules-badge">
           Рушій правил: {rulesVer}
         </div>
       </div>
 
-      <div className="grid g2" style={{ gap: '1.25rem' }}>
+      <div className="two-level-grid">
         {/* Рівень 1: Формальне виконання */}
-        <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--line)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.4rem' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontWeight: 600, fontSize: '.92rem' }}>
-              <CheckCircle2 size={17} style={{ color: 'var(--ok)' }} />
-              1. Виконання заходів (формальне)
+        <div className="two-level-box">
+          <div className="two-level-metric-head">
+            <span className="two-level-metric-label">
+              <CheckCircle2 size={17} style={{ color: 'var(--ok)', flexShrink: 0 }} />
+              <span>1. Виконання заходів (формальне)</span>
             </span>
-            <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--ok)' }}>
+            <span className="two-level-metric-percent ok">
               {twoLevel.formal_execution_percent}%
             </span>
           </div>
-          <div style={{ height: 10, borderRadius: 5, background: 'var(--line)', overflow: 'hidden', margin: '.6rem 0' }}>
-            <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, twoLevel.formal_execution_percent))}%`, background: 'var(--ok)', transition: 'width .3s' }} />
+          <div className="two-level-bar-track">
+            <div
+              className="two-level-bar-fill ok"
+              style={{ width: `${Math.min(100, Math.max(0, twoLevel.formal_execution_percent))}%` }}
+            />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.8rem', color: 'var(--muted)' }}>
+          <div className="two-level-metric-sub">
             <span>Закрито: <b>{twoLevel.formal_execution_done}</b> з <b>{twoLevel.formal_execution_total}</b> заходів</span>
-            <span>Звітний статус програми</span>
+            <span className="two-level-status-tag">Звітний статус програми</span>
           </div>
         </div>
 
         {/* Рівень 2: Зниження корупційних ризиків */}
-        <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--line)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.4rem' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontWeight: 600, fontSize: '.92rem' }}>
-              <Target size={17} style={{ color: 'var(--accent)' }} />
-              2. Зниження корупційних ризиків
+        <div className="two-level-box">
+          <div className="two-level-metric-head">
+            <span className="two-level-metric-label">
+              <Target size={17} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              <span>2. Зниження корупційних ризиків</span>
             </span>
-            <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent)' }}>
+            <span className="two-level-metric-percent accent">
               {twoLevel.risk_achievement_percent}%
             </span>
           </div>
-          <div style={{ height: 10, borderRadius: 5, background: 'var(--line)', overflow: 'hidden', margin: '.6rem 0' }}>
-            <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, twoLevel.risk_achievement_percent))}%`, background: 'var(--accent)', transition: 'width .3s' }} />
+          <div className="two-level-bar-track">
+            <div
+              className="two-level-bar-fill accent"
+              style={{ width: `${Math.min(100, Math.max(0, twoLevel.risk_achievement_percent))}%` }}
+            />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.8rem', color: 'var(--muted)' }}>
+          <div className="two-level-metric-sub">
             <span>Зменшуються: <b>{twoLevel.risks_reducing_count}</b> з <b>{twoLevel.risks_total}</b> ризиків</span>
-            <span>За індикаторами результативності</span>
+            <span className="two-level-status-tag">За індикаторами результативності</span>
           </div>
         </div>
       </div>
 
       {/* Gap аналіз */}
-      <div style={{
-        marginTop: '1rem',
-        padding: '.75rem 1rem',
-        borderRadius: 'var(--radius)',
-        background: twoLevel.gap > 15 ? 'rgba(234, 88, 12, 0.08)' : 'var(--surface-2)',
-        border: `1px solid ${twoLevel.gap > 15 ? 'rgba(234, 88, 12, 0.3)' : 'var(--line)'}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '.6rem'
-      }}>
-        <div style={{ fontSize: '.84rem', lineHeight: 1.45, flex: 1, minWidth: 260 }}>
+      <div className={`two-level-gap-box ${twoLevel.gap > 15 ? 'warning' : ''}`}>
+        <div className="two-level-gap-text">
           <b>Розрив змістовної ефективності (Gap):</b>{' '}
-          <span style={{ fontWeight: 700, color: twoLevel.gap > 0 ? '#ea580c' : 'var(--ok)' }}>
+          <span className={`two-level-gap-val ${twoLevel.gap > 0 ? 'gap-warn' : 'gap-ok'}`}>
             {twoLevel.gap > 0 ? `+${twoLevel.gap}%` : `${twoLevel.gap}%`}
           </span>
           {' · '}
@@ -148,8 +143,7 @@ export default function Dashboard() {
           </span>
         </div>
         <button
-          className="btn secondary small"
-          style={{ fontSize: '.8rem' }}
+          className="btn secondary small two-level-gap-btn"
           onClick={() => nav('/program/risks')}
         >
           Теплова карта ризиків 5×5 <ArrowUpRight size={13} style={{ marginLeft: '.25rem' }} />

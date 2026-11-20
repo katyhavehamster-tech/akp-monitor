@@ -663,7 +663,6 @@ export function AdminKeys() {
                       value={password}
                       onChange={e => setPassword(e.target.value)}
                       placeholder="Введіть надійний пароль захисту"
-                      autoFocus
                     />
                   </label>
 
