@@ -7,7 +7,7 @@
 виконавця кумулятивний, тож стан на кінець ІІ кварталу = стан на кінець півріччя.
 """
 import csv
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from django.conf import settings
