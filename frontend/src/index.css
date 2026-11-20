@@ -2319,26 +2319,41 @@ textarea { min-height: 110px; resize: vertical; }
     padding: 0.85rem !important;
     border-radius: 8px !important;
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: calc(100vw - 1rem) !important;
     box-sizing: border-box !important;
     margin: auto 0 !important;
+    overflow-x: hidden !important;
   }
   .modal-head {
     margin-bottom: 0.75rem !important;
     padding-bottom: 0.5rem !important;
     gap: 0.5rem !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+  }
+  .modal-head > div {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
   }
   .modal-head h3,
   .modal-card h3 {
     font-size: 0.98rem !important;
     line-height: 1.25 !important;
     word-break: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+  .modal-close-btn {
+    flex-shrink: 0 !important;
+    margin-left: auto !important;
+    padding: 4px !important;
   }
   .modal .hint {
     padding: 0.65rem 0.75rem !important;
     font-size: 0.8rem !important;
     line-height: 1.4 !important;
     word-break: break-word !important;
+    overflow-wrap: break-word !important;
   }
   .modal-actions {
     margin-top: 1rem !important;
@@ -2346,6 +2361,7 @@ textarea { min-height: 110px; resize: vertical; }
     flex-direction: column-reverse !important;
     align-items: stretch !important;
     gap: 0.5rem !important;
+    width: 100% !important;
   }
   .modal-actions button,
   .modal-actions .btn {
@@ -2357,6 +2373,7 @@ textarea { min-height: 110px; resize: vertical; }
     padding: 0.6rem 0.75rem !important;
     white-space: normal !important;
     line-height: 1.3 !important;
+    box-sizing: border-box !important;
   }
   .modal code {
     word-break: break-all !important;
@@ -2382,24 +2399,74 @@ textarea { min-height: 110px; resize: vertical; }
 @media (max-width: 320px) {
   .modal-backdrop,
   .modal-overlay {
-    padding: 0.25rem !important;
+    padding: 4px !important;
   }
   .modal,
   .modal-card {
     padding: 0.65rem 0.5rem !important;
     border-radius: 6px !important;
-    margin: 0.25rem 0 !important;
+    margin: 0.25rem auto !important;
+    max-width: calc(100vw - 8px) !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+  .modal-head {
+    gap: 0.35rem !important;
+    margin-bottom: 0.65rem !important;
+    padding-bottom: 0.45rem !important;
   }
   .modal-head h3,
   .modal-card h3 {
-    font-size: 0.88rem !important;
+    font-size: 0.86rem !important;
+    line-height: 1.25 !important;
+    word-break: break-word !important;
+  }
+  .modal-close-btn {
+    padding: 2px 4px !important;
+    flex-shrink: 0 !important;
+    margin-left: auto !important;
   }
   .modal-body {
     gap: 0.65rem !important;
   }
   .modal .hint {
-    padding: 0.5rem 0.55rem !important;
-    font-size: 0.75rem !important;
+    padding: 0.45rem 0.55rem !important;
+    font-size: 0.73rem !important;
+    line-height: 1.35 !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+  .modal code {
+    word-break: break-all !important;
+    font-size: 0.7rem !important;
+    display: inline-block !important;
+    max-width: 100% !important;
+  }
+  .modal input,
+  .modal select,
+  .modal textarea {
+    font-size: 0.82rem !important;
+    padding: 0.4rem 0.5rem !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+  .modal-actions {
+    margin-top: 0.85rem !important;
+    padding-top: 0.65rem !important;
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+    gap: 0.45rem !important;
+    width: 100% !important;
+  }
+  .modal-actions button,
+  .modal-actions .btn {
+    width: 100% !important;
+    font-size: 0.8rem !important;
+    padding: 0.5rem 0.6rem !important;
+    line-height: 1.25 !important;
+    white-space: normal !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
   }
   .modal-card form button {
     width: 100%;
@@ -2625,6 +2692,9 @@ textarea { min-height: 110px; resize: vertical; }
   }
   .two-level-metric-percent {
     font-size: 1.15rem;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: max-content !important;
   }
   .two-level-metric-sub {
     font-size: 0.73rem;
@@ -2641,34 +2711,124 @@ textarea { min-height: 110px; resize: vertical; }
   }
 }
 
+/* Адаптація для вузьких мобільних екранів (max-width: 380px) */
+@media (max-width: 380px) {
+  .two-level-metric-head {
+    display: flex !important;
+    align-items: baseline !important;
+    justify-content: space-between !important;
+    flex-wrap: nowrap !important;
+    gap: 0.4rem !important;
+  }
+  .two-level-metric-label {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    font-size: 0.8rem !important;
+    line-height: 1.25 !important;
+    word-break: break-word !important;
+  }
+  .two-level-metric-percent {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    min-width: max-content !important;
+    font-size: 1.15rem !important;
+    line-height: 1 !important;
+    margin-left: auto !important;
+    letter-spacing: -0.5px !important;
+  }
+  .two-level-metric-sub {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.25rem !important;
+  }
+  .two-level-metric-sub span {
+    width: 100% !important;
+    word-break: break-word !important;
+  }
+  .two-level-gap-box {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+  }
+  .two-level-gap-text {
+    width: 100% !important;
+    font-size: 0.76rem !important;
+    line-height: 1.35 !important;
+    word-break: break-word !important;
+  }
+  .two-level-gap-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+}
+
 /* Адаптація для ультра-вузьких екранів (max-width: 320px, зокрема 266px) */
 @media (max-width: 320px) {
   .two-level-progress-card {
     padding: 0.65rem 0.45rem !important;
     border-radius: 8px !important;
   }
+  .two-level-card-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.35rem !important;
+  }
   .two-level-card-title-group {
-    flex: 1 1 100%;
+    width: 100% !important;
+    flex: 1 1 100% !important;
   }
   .two-level-title {
-    font-size: 0.88rem;
+    font-size: 0.86rem !important;
+    line-height: 1.2 !important;
   }
   .two-level-subtitle {
-    font-size: 0.72rem;
+    font-size: 0.7rem !important;
+    line-height: 1.3 !important;
+  }
+  .two-level-rules-badge {
+    align-self: flex-start !important;
+    font-size: 0.7rem !important;
+    padding: 0.2rem 0.45rem !important;
   }
   .two-level-box {
-    padding: 0.6rem 0.45rem !important;
+    padding: 0.55rem 0.45rem !important;
+  }
+  .two-level-metric-head {
+    display: flex !important;
+    align-items: baseline !important;
+    justify-content: space-between !important;
+    flex-wrap: nowrap !important;
+    gap: 0.35rem !important;
+  }
+  .two-level-metric-label {
+    font-size: 0.76rem !important;
+    line-height: 1.25 !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
   }
   .two-level-metric-percent {
-    font-size: 1.05rem;
+    font-size: 1.05rem !important;
+    font-weight: 800 !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: max-content !important;
+  }
+  .two-level-metric-sub {
+    font-size: 0.7rem !important;
+    gap: 0.2rem !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
   }
   .two-level-status-tag {
-    white-space: normal;
+    font-size: 0.68rem !important;
+    white-space: normal !important;
   }
   .two-level-gap-btn {
-    width: 100%;
-    justify-content: center;
-    font-size: 0.74rem !important;
+    width: 100% !important;
+    justify-content: center !important;
+    font-size: 0.72rem !important;
+    padding: 0.4rem 0.5rem !important;
   }
 }
 

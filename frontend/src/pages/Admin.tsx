@@ -184,15 +184,16 @@ export function AdminUsers() {
       <div className="modal-backdrop" onClick={() => setCreatedKeyInfo(null)}>
         <div className="modal" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
           <div className="modal-head">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-              <CheckCircle2 size={20} style={{ color: 'var(--ok, #10b981)' }} />
-              <h3 style={{ margin: 0 }}>Обліковий запис та ключ створено</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', minWidth: 0, flex: '1 1 auto' }}>
+              <CheckCircle2 size={20} style={{ color: 'var(--ok, #10b981)', flexShrink: 0 }} />
+              <h3 style={{ margin: 0, wordBreak: 'break-word', fontSize: '1.05rem' }}>Обліковий запис та ключ створено</h3>
             </div>
             <button
               type="button"
               className="modal-close-btn"
               onClick={() => setCreatedKeyInfo(null)}
               aria-label="Закрити"
+              style={{ flexShrink: 0, marginLeft: 'auto' }}
             >
               <X size={18} />
             </button>
@@ -811,15 +812,16 @@ export function AdminKeys() {
               // Стан успішного випуску ключа (запобігання втраті файлу)
               <>
                 <div className="modal-head">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                    <CheckCircle2 size={20} style={{ color: 'var(--ok, #10b981)' }} />
-                    <h3 style={{ margin: 0 }}>Ключ доступу успішно випущено</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', minWidth: 0, flex: '1 1 auto' }}>
+                    <CheckCircle2 size={20} style={{ color: 'var(--ok, #10b981)', flexShrink: 0 }} />
+                    <h3 style={{ margin: 0, wordBreak: 'break-word', fontSize: '1.05rem' }}>Ключ доступу успішно випущено</h3>
                   </div>
                   <button
                     type="button"
                     className="modal-close-btn"
                     onClick={closeModal}
                     aria-label="Закрити"
+                    style={{ flexShrink: 0, marginLeft: 'auto' }}
                   >
                     <X size={18} />
                   </button>
@@ -876,9 +878,9 @@ export function AdminKeys() {
               // Форма введення пароля для генерації ключа
               <>
                 <div className="modal-head">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                    <KeyRound size={20} className="muted" />
-                    <h3 style={{ margin: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', minWidth: 0, flex: '1 1 auto' }}>
+                    <KeyRound size={20} className="muted" style={{ flexShrink: 0 }} />
+                    <h3 style={{ margin: 0, wordBreak: 'break-word', fontSize: '1.05rem' }}>
                       {modalUser.status === 'active' ? 'Перевипуск' : 'Випуск'} ключа доступу (.key)
                     </h3>
                   </div>
@@ -888,6 +890,7 @@ export function AdminKeys() {
                     disabled={busy}
                     onClick={closeModal}
                     aria-label="Закрити"
+                    style={{ flexShrink: 0, marginLeft: 'auto' }}
                   >
                     <X size={18} />
                   </button>
