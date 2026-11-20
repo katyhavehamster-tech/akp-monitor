@@ -129,19 +129,40 @@ export default function Layout() {
     setUserMenuOpen(false)
     const curPath = loc.pathname
     const curLbl = resolveLabel(curPath)
+
+    if (isDetailMeasure) {
+      setTrail([
+        { path: '/program/measures', label: 'Реєстр заходів' },
+        { path: curPath, label: `Захід ${detailCode}` },
+      ])
+      return
+    }
+
     if (curPath === sectionDefaultPath) {
       setTrail([{ path: curPath, label: curLbl }])
       return
     }
+
+    // Якщо це перехід між основними вкладками одного розділу — не нагромаджувати безкінечний ланцюг
+    const isTopLevelItem = activeGroup?.items.some(i => i[0] === curPath)
+    if (isTopLevelItem) {
+      setTrail(prev => {
+        const last = prev[prev.length - 1]
+        if (last && last.path === curPath) return prev
+        const prevPoint = last && last.path !== curPath ? [last] : []
+        return [...prevPoint, { path: curPath, label: curLbl }].slice(-2)
+      })
+      return
+    }
+
     setTrail(prev => {
       const idx = prev.findIndex(item => item.path === curPath || item.label === curLbl)
       if (idx !== -1) {
         return prev.slice(0, idx + 1)
       }
-      const base = prev.length ? prev : [{ path: sectionDefaultPath, label: resolveLabel(sectionDefaultPath) }]
-      return [...base, { path: curPath, label: curLbl }]
+      return [...prev.slice(-2), { path: curPath, label: curLbl }]
     })
-  }, [loc.pathname, sectionDefaultPath])
+  }, [loc.pathname, sectionDefaultPath, isDetailMeasure, detailCode, activeGroup])
 
   useEffect(() => {
     if (!open && !userMenuOpen) return
@@ -244,11 +265,11 @@ export default function Layout() {
               ) : (
                 <span className="hide-sm">{section}</span>
               )}
-              <ChevronRight size={15} className="hide-sm" />
+              <ChevronRight size={15} className="hide-sm" style={{ flexShrink: 0 }} />
             </>
           )}
           {prevSteps.map((step, idx) => (
-            <span key={step.path} className="hide-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem' }}>
+            <span key={step.path} className="hide-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem', flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => handleJumpToStep(step.path, idx)}
@@ -257,7 +278,7 @@ export default function Layout() {
               >
                 {step.label}
               </button>
-              <ChevronRight size={15} className="hide-sm" />
+              <ChevronRight size={15} className="hide-sm" style={{ flexShrink: 0 }} />
             </span>
           ))}
           <b className="crumb-current-title">{currentLabel}</b>

@@ -46,6 +46,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     reloadMe()
   }, [reloadMe])
 
+  // Фоновий heartbeat перевірки валідності сесії (кожні 5 сек, а також на focus / visibilitychange)
+  useEffect(() => {
+    if (!profile) return
+
+    let cancelled = false
+    const checkSession = async () => {
+      if (!getToken() || cancelled) return
+      try {
+        await api('auth/heartbeat')
+      } catch (e: any) {
+        if (cancelled) return
+        if (e && (e.status === 401 || e.status === 403)) {
+          setToken(null)
+          setProfile(null)
+          let reason = 'session_terminated'
+          const detail = typeof e.data === 'object' && e.data ? String(e.data.detail || '') : String(e.data || '')
+          if (detail.includes('відкликано') || detail.includes('revoked')) {
+            reason = 'key_revoked'
+          } else if (detail.includes('заблоковано') || detail.includes('inactive')) {
+            reason = 'account_disabled'
+          }
+          try {
+            sessionStorage.setItem('auth_redirect_reason', reason)
+          } catch {
+            /* ignore */
+          }
+          if (typeof window !== 'undefined' && !['/login', '/public', '/verify'].includes(window.location.pathname)) {
+            window.location.href = `/login?reason=${reason}`
+          }
+        }
+      }
+    }
+
+    const intervalId = window.setInterval(checkSession, 5000)
+    const onFocus = () => { checkSession() }
+    const onVisibility = () => {
+      if (!document.hidden) checkSession()
+    }
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [profile])
+
   const login = async (username: string, password: string) => {
     await ensureCsrf()
     const r = await api('auth/login', { body: { username, password } })

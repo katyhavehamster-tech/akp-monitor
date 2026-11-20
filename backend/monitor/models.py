@@ -89,6 +89,24 @@ class UserAccessKey(models.Model):
         return f"{self.user.username} [{self.fingerprint[:16]}...] ({status})"
 
 
+class UserSession(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="user_sessions")
+    token_key = models.CharField("Ключ токену", max_length=40, db_index=True)
+    key_fingerprint = models.CharField("SHA-256 відбиток ключа", max_length=64, blank=True, default="")
+    ip_address = models.GenericIPAddressField("IP-адреса", null=True, blank=True)
+    user_agent = models.CharField("User-Agent (браузер/ОС)", max_length=500, blank=True, default="")
+    created_at = models.DateTimeField("Час входу", default=timezone.now)
+    last_activity = models.DateTimeField("Час останньої активності", default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Активна сесія"
+        verbose_name_plural = "Активні сесії"
+        ordering = ["-last_activity"]
+
+    def __str__(self):
+        return f"{self.user.username} [{self.ip_address}] ({self.last_activity})"
+
+
 class Program(models.Model):
     code = models.CharField(max_length=50, unique=True)
     organ = models.ForeignKey(Organ, on_delete=models.CASCADE, related_name="programs")

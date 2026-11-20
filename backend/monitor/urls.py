@@ -17,6 +17,8 @@ urlpatterns = [
     path("auth/demo-users/", v.demo_users),
     path("auth/me", v.me),
     path("auth/me/", v.me),
+    path("auth/heartbeat", v.auth_heartbeat),
+    path("auth/heartbeat/", v.auth_heartbeat),
     path("public/overview", v.public_overview),
     path("public/overview/", v.public_overview),
     path("public/measures", v.public_measures),
@@ -66,6 +68,14 @@ urlpatterns = [
     path("admin/keys/register/", v.admin_key_register),
     path("admin/keys/<str:code>/revoke", v.admin_key_revoke),
     path("admin/keys/<str:code>/revoke/", v.admin_key_revoke),
+    path("admin/sessions", v.admin_sessions_list),
+    path("admin/sessions/", v.admin_sessions_list),
+    path("admin/sessions/<int:session_id>/terminate", v.admin_session_terminate),
+    path("admin/sessions/<int:session_id>/terminate/", v.admin_session_terminate),
+    path("admin/sessions/terminate-all", v.admin_sessions_terminate_all),
+    path("admin/sessions/terminate-all/", v.admin_sessions_terminate_all),
+    path("admin/sessions/terminate-user/<str:code>", v.admin_session_terminate_user),
+    path("admin/sessions/terminate-user/<str:code>/", v.admin_session_terminate_user),
     path("system/health", v.system_health),
 
 ]

@@ -46,7 +46,7 @@ from .access import (AUDIT, CONTENT_EDIT, MEASURE_MANAGE, SURVEYS, SURVEYS_EDIT,
 from .key_crypto import calculate_public_key_fingerprint, verify_key_signature
 from .models import (AuditLog, Comment, DeadlineChange, Evidence, Execution, Measure, Profile, Program,
                      Recommendation, ReportingPeriod, Risk, Role, Section, Survey, SystemSettings, Unit,
-                     UserAccessKey)
+                     UserAccessKey, UserSession)
 from .surveys import compare as compare_surveys
 from .surveys import group_options, parse_csv, parse_survey_file
 
@@ -567,6 +567,22 @@ def auth_login_key(request):
         cache.delete(user_key)
 
     token, _ = Token.objects.get_or_create(user=user)
+    
+    # Фіксація активної сесії користувача в БД
+    client_ip = _client_ip(request)
+    ua = str(request.META.get("HTTP_USER_AGENT") or "")[:500]
+    now = timezone.now()
+    UserSession.objects.filter(token_key=token.key).delete()
+    UserSession.objects.create(
+        user=user,
+        token_key=token.key,
+        key_fingerprint=key.fingerprint,
+        ip_address=client_ip if client_ip != "unknown" else None,
+        user_agent=ua,
+        created_at=now,
+        last_activity=now,
+    )
+
     AuditLog.write(
         user.profile,
         f"успішний вхід за ключем ({key.fingerprint[:16]}...)",
@@ -607,40 +623,57 @@ def login(request):
 
 
 
+def _touch_session(request, user):
+    """Оновлює час останньої активності поточної сесії користувача."""
+    token_key = getattr(getattr(request, "auth", None), "key", None)
+    if not token_key:
+        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+        if auth_header.startswith("Token "):
+            token_key = auth_header[6:].strip()
+    if not token_key or not user or not user.is_authenticated:
+        return
+    now = timezone.now()
+    sess = UserSession.objects.filter(token_key=token_key).first()
+    if sess:
+        if (now - sess.last_activity).total_seconds() > 15:
+            sess.last_activity = now
+            sess.save(update_fields=["last_activity"])
+    else:
+        client_ip = _client_ip(request)
+        ua = str(request.META.get("HTTP_USER_AGENT") or "")[:500]
+        act_key = getattr(user, "access_keys", None)
+        fp = act_key.filter(is_revoked=False).first().fingerprint if act_key and act_key.filter(is_revoked=False).exists() else ""
+        UserSession.objects.create(
+            user=user,
+            token_key=token_key,
+            key_fingerprint=fp,
+            ip_address=client_ip if client_ip != "unknown" else None,
+            user_agent=ua,
+            created_at=now,
+            last_activity=now,
+        )
+
+
 @api_view(["POST"])
 def logout(request):
     p = getattr(request.user, "profile", None)
-    Token.objects.filter(user=request.user).delete()
+    cur_token = getattr(getattr(request, "auth", None), "key", None)
+    if cur_token:
+        UserSession.objects.filter(token_key=cur_token).delete()
+        Token.objects.filter(key=cur_token).delete()
+    else:
+        UserSession.objects.filter(user=request.user).delete()
+        Token.objects.filter(user=request.user).delete()
     if p:
         AuditLog.write(p, "вихід із системи", "korystuvach", p.code)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
-@ensure_csrf_cookie
-def demo_users(request):
-    """Список демо-облікових записів для сторінки входу (лише синтетичні ролі, без імен)."""
-    if not getattr(settings, "AKP_DEMO_MODE", True):
-        return Response([])
-    return Response([
-        {
-            "code": p.code,
-            "username": p.user.username,
-            "role": p.role,
-            "role_name": p.get_role_display(),
-            "unit": unit_dict(p.unit),
-            "position": p.position,
-        }
-        for p in Profile.objects.select_related("unit", "user").order_by("code")
-        if p.user.is_active
-    ])
-
-
-@api_view(["GET"])
 @ensure_csrf_cookie
 def me(request):
     p = profile(request)
+    _touch_session(request, request.user)
     today = SystemSettings.today()
     per = default_period()
     return Response({
@@ -648,6 +681,19 @@ def me(request):
         "today": today,
         "current_period": period_dict(per, today),
         "csrfToken": get_token(request),
+    })
+
+
+@api_view(["GET"])
+def auth_heartbeat(request):
+    """Легкий фоновий запит перевірки валідності сесії та активності кожні 5 секунд."""
+    p = profile(request)
+    _touch_session(request, request.user)
+    return Response({
+        "ok": True,
+        "code": p.code,
+        "username": request.user.username,
+        "is_active": request.user.is_active,
     })
 
 
@@ -2175,7 +2221,7 @@ def user_update(request, code):
             x.user.is_active = new_active
             x.user.save()
             if not new_active:
-                Token.objects.filter(user=x.user).delete()
+                _flush_user_sessions(x.user)
             AuditLog.write(p, "змінено активність", "korystuvach", x.code, "is_active", not new_active, new_active)
     if d.get("password"):
         raw_pw = str(d["password"])
@@ -2183,7 +2229,7 @@ def user_update(request, code):
             raise ValidationError({"password": "Пароль має містити щонайменше 4 символи."})
         x.user.set_password(raw_pw)
         x.user.save()
-        Token.objects.filter(user=x.user).delete()
+        _flush_user_sessions(x.user)
         Token.objects.create(user=x.user)
         AuditLog.write(p, "скинуто пароль", "korystuvach", x.code)
     return Response(profile_dict(x))
@@ -2231,9 +2277,13 @@ def admin_keys(request):
 
 
 def _flush_user_sessions(user):
-    """Анулює всі активні токени та Django-сесії вказаного користувача при перевипуску або відкликанні ключа."""
+    """Анулює всі активні токени, UserSession та Django-сесії вказаного користувача при перевипуску або відкликанні ключа."""
     try:
         Token.objects.filter(user=user).delete()
+    except Exception:
+        pass
+    try:
+        UserSession.objects.filter(user=user).delete()
     except Exception:
         pass
     try:
@@ -2324,6 +2374,143 @@ def admin_key_revoke(request, code):
 
     return Response({"ok": True, "user_code": target_profile.code})
 
+
+@api_view(["GET"])
+def admin_sessions_list(request):
+    """Список активних сесій користувачів для технічного адміністратора."""
+    require(request, TECH, "Перегляд активних сесій доступний лише технічному адміністратору.")
+    now = timezone.now()
+    cur_token = getattr(getattr(request, "auth", None), "key", None)
+
+    # Синхронізація: видалити записи сесій, чиї токени вже не існують в базі
+    valid_tokens = set(Token.objects.values_list("key", flat=True))
+    UserSession.objects.exclude(token_key__in=valid_tokens).delete()
+
+    sessions = UserSession.objects.select_related("user", "user__profile", "user__profile__unit").order_by("-last_activity")
+    items = []
+    for s in sessions:
+        u = s.user
+        p = getattr(u, "profile", None)
+        active_key = u.access_keys.filter(is_revoked=False).first() if hasattr(u, "access_keys") else None
+        fp = s.key_fingerprint or (active_key.fingerprint if active_key else "")
+        delta = (now - s.last_activity).total_seconds()
+        is_online = delta < 120  # активність за останні 2 хвилини
+        is_current = bool(cur_token and s.token_key == cur_token)
+
+        items.append({
+            "id": s.id,
+            "user_code": p.code if p else u.username.upper(),
+            "username": u.username,
+            "full_name": p.full_name if p and p.full_name else (p.code if p else u.username),
+            "role": p.role if p else "—",
+            "role_name": p.get_role_display() if p else "—",
+            "position": p.position if p else "",
+            "unit": unit_dict(p.unit) if p and p.unit else None,
+            "key_fingerprint": fp,
+            "ip_address": s.ip_address or "—",
+            "user_agent": s.user_agent or "—",
+            "created_at": s.created_at.isoformat(),
+            "last_activity": s.last_activity.isoformat(),
+            "is_current": is_current,
+            "is_online": is_online,
+        })
+
+    online_count = sum(1 for it in items if it["is_online"])
+    return Response({
+        "sessions": items,
+        "total_count": len(items),
+        "online_count": online_count,
+    })
+
+
+@api_view(["POST", "DELETE"])
+def admin_session_terminate(request, session_id):
+    """Примусове завершення конкретної сесії користувача технічним адміністратором."""
+    admin_p = require(request, TECH, "Керування сесіями доступне лише технічному адміністратору.")
+    sess = get_object_or_404(UserSession, id=session_id)
+    cur_token = getattr(getattr(request, "auth", None), "key", None)
+
+    if cur_token and sess.token_key == cur_token:
+        raise ValidationError({"detail": "Не можна примусово завершити власну активну сесію адміністратора."})
+
+    target_user = sess.user
+    target_code = getattr(target_user, "profile", None).code if hasattr(target_user, "profile") else target_user.username
+    token_key = sess.token_key
+    ip = sess.ip_address or "unknown"
+
+    with transaction.atomic():
+        Token.objects.filter(key=token_key).delete()
+        sess.delete()
+        AuditLog.write(
+            admin_p,
+            "примусове завершення сесії користувача",
+            "korystuvach",
+            target_code,
+            field="session",
+            old=ip,
+            new="terminated",
+        )
+
+    return Response({"ok": True, "terminated_id": session_id})
+
+
+@api_view(["POST"])
+def admin_sessions_terminate_all(request):
+    """Примусове завершення всіх активних сесій інших користувачів."""
+    admin_p = require(request, TECH, "Керування сесіями доступне лише технічному адміністратору.")
+    cur_token = getattr(getattr(request, "auth", None), "key", None)
+
+    qs = UserSession.objects.all()
+    if cur_token:
+        qs = qs.exclude(token_key=cur_token)
+
+    tokens_to_del = list(qs.values_list("token_key", flat=True))
+    count = qs.count()
+
+    with transaction.atomic():
+        Token.objects.filter(key__in=tokens_to_del).delete()
+        qs.delete()
+        AuditLog.write(
+            admin_p,
+            f"примусове завершення всіх сесій ({count} сеансів)",
+            "korystuvach",
+            "ALL_EXCEPT_ADMIN",
+            field="sessions_count",
+            old=str(count),
+            new="0",
+        )
+
+    return Response({"ok": True, "terminated_count": count})
+
+
+@api_view(["POST"])
+def admin_session_terminate_user(request, code):
+    """Примусове завершення всіх сесій вказаного користувача."""
+    admin_p = require(request, TECH, "Керування сесіями доступне лише технічному адміністратору.")
+    target_p = get_object_or_404(Profile, code=code.strip().upper())
+    cur_token = getattr(getattr(request, "auth", None), "key", None)
+
+    qs = UserSession.objects.filter(user=target_p.user)
+    if cur_token:
+        qs = qs.exclude(token_key=cur_token)
+
+    tokens_to_del = list(qs.values_list("token_key", flat=True))
+    count = qs.count()
+
+    with transaction.atomic():
+        Token.objects.filter(key__in=tokens_to_del).delete()
+        qs.delete()
+        AuditLog.write(
+            admin_p,
+            f"примусове завершення всіх сесій користувача ({count} сеансів)",
+            "korystuvach",
+            target_p.code,
+            field="sessions_count",
+            old=str(count),
+            new="0",
+        )
+
+    return Response({"ok": True, "terminated_count": count})
 
 
 @api_view(["GET"])

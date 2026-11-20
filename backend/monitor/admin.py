@@ -35,3 +35,9 @@ class UserAccessKeyAdmin(admin.ModelAdmin):
     list_filter = ["is_revoked"]
     search_fields = ["user__username", "fingerprint"]
 
+
+@admin.register(m.UserSession)
+class UserSessionAdmin(admin.ModelAdmin):
+    list_display = ["id", "user", "ip_address", "last_activity", "created_at"]
+    search_fields = ["user__username", "ip_address", "token_key"]
+

@@ -31,6 +31,12 @@ export default function Login() {
       if (r === 'key_revoked') {
         setRevocationNotice('Ваш активний сеанс завершено: особистий ключ доступу було відкликано або перевипущено. Будь ласка, завантажте новий файл ключа (.key) та здійсніть вхід.')
         sessionStorage.removeItem('auth_redirect_reason')
+      } else if (r === 'session_terminated') {
+        setRevocationNotice('Ваш сеанс було примусово завершено адміністратором безпеки. Для продовження роботи виконайте вхід повторно.')
+        sessionStorage.removeItem('auth_redirect_reason')
+      } else if (r === 'account_disabled') {
+        setRevocationNotice('Обліковий запис деактивовано або заблоковано адміністратором системи.')
+        sessionStorage.removeItem('auth_redirect_reason')
       }
     } catch {
       /* ignore */

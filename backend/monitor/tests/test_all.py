@@ -1108,6 +1108,61 @@ class OwaspSecurityTests(Base):
         self.assertNotIn("cdn.jsdelivr.net", html_docs)
         self.assertIn("/static/drf_spectacular_sidecar/swagger-ui-dist/", html_docs)
 
+    def test_admin_sessions_monitoring_and_termination(self):
+        """Тестування перегляду та примусового завершення активних сесій адміністратором."""
+        from monitor.models import UserSession
+        from rest_framework.authtoken.models import Token
+        from django.contrib.auth.models import User
+
+        admin_c = self.client_for("u-001")
+        u2 = User.objects.get(username="u-002")
+        token2, _ = Token.objects.get_or_create(user=u2)
+
+        # Створюємо сесію для u-002
+        sess2 = UserSession.objects.create(
+            user=u2,
+            token_key=token2.key,
+            key_fingerprint="test_fp_u002",
+            ip_address="192.168.1.100",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+        )
+
+        # Перевірка списку сесій
+        r_list = admin_c.get("/api/admin/sessions")
+        self.assertEqual(r_list.status_code, 200)
+        data = r_list.json()
+        self.assertIn("sessions", data)
+        self.assertGreaterEqual(data["total_count"], 1)
+        found_u2 = [s for s in data["sessions"] if s["username"] == "u-002"]
+        self.assertTrue(len(found_u2) > 0)
+        self.assertEqual(found_u2[0]["ip_address"], "192.168.1.100")
+
+        # Перевірка захисту від завершення власної сесії адміністратора
+        admin_sess = [s for s in data["sessions"] if s["is_current"]]
+        if admin_sess:
+            r_self_term = admin_c.post(f"/api/admin/sessions/{admin_sess[0]['id']}/terminate")
+            self.assertEqual(r_self_term.status_code, 400)
+
+        # Примусове завершення сесії u-002
+        r_term = admin_c.post(f"/api/admin/sessions/{sess2.id}/terminate")
+        self.assertEqual(r_term.status_code, 200)
+        self.assertFalse(UserSession.objects.filter(id=sess2.id).exists())
+        self.assertFalse(Token.objects.filter(key=token2.key).exists())
+
+        # Клієнт u-002 тепер отримує 401
+        c_u2 = APIClient()
+        c_u2.credentials(HTTP_AUTHORIZATION=f"Token {token2.key}")
+        r_hb = c_u2.get("/api/auth/heartbeat")
+        self.assertEqual(r_hb.status_code, 401)
+
+    def test_auth_heartbeat(self):
+        """Тестування ендпоінту heartbeat для фонової перевірки активності сесії."""
+        c = self.client_for("u-001")
+        r_hb = c.get("/api/auth/heartbeat")
+        self.assertEqual(r_hb.status_code, 200)
+        self.assertTrue(r_hb.json()["ok"])
+        self.assertTrue(r_hb.json()["is_active"])
+
 
 
 

@@ -101,13 +101,20 @@ export async function api<T = Any>(path: string, opts: { method?: string; body?:
   if (!r.ok) {
     if (r.status === 401) {
       setToken(null)
+      let reason = 'session_terminated'
+      const detailStr = typeof data === 'object' && data ? String(data.detail || '') : String(data || '')
+      if (detailStr.includes('відкликано') || detailStr.includes('revoked')) {
+        reason = 'key_revoked'
+      } else if (detailStr.includes('заблоковано') || detailStr.includes('inactive') || detailStr.includes('неактивний')) {
+        reason = 'account_disabled'
+      }
       try {
-        sessionStorage.setItem('auth_redirect_reason', 'key_revoked')
+        sessionStorage.setItem('auth_redirect_reason', reason)
       } catch {
         /* ignore */
       }
       if (typeof window !== 'undefined' && !['/login', '/public', '/verify'].includes(window.location.pathname)) {
-        window.location.href = '/login?reason=key_revoked'
+        window.location.href = `/login?reason=${reason}`
       }
     }
     throw new ApiError(r.status, data)

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle2, Download, KeyRound, X } from 'lucide-react'
-import { api, fmtDate, type Any } from '../api'
+import { useCallback, useEffect, useState } from 'react'
+import { CheckCircle2, Download, KeyRound, Laptop, LogOut, Radio, RefreshCw, ShieldAlert, X } from 'lucide-react'
+import { api, fmtDate, fmtDateTime, type Any } from '../api'
 import { useAuth } from '../auth'
 import { Card, ErrorBox, Loading, Pill, useApi } from '../components/ui'
 import { downloadKeyFile, generateKeyFile, type KeyFileContainer } from '../keyFileCrypto'
@@ -357,8 +357,29 @@ export function AdminSystem() {
   </>
 }
 
+function parseDevice(ua: string): string {
+  if (!ua || ua === '—') return 'Невідомий пристрій'
+  let os = 'OS'
+  if (ua.includes('Windows')) os = 'Windows'
+  else if (ua.includes('Macintosh') || ua.includes('Mac OS')) os = 'macOS'
+  else if (ua.includes('Android')) os = 'Android'
+  else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS'
+  else if (ua.includes('Linux')) os = 'Linux'
+
+  let browser = 'Браузер'
+  if (ua.includes('Edg/')) browser = 'Edge'
+  else if (ua.includes('Chrome/')) browser = 'Chrome'
+  else if (ua.includes('Firefox/')) browser = 'Firefox'
+  else if (ua.includes('Safari/')) browser = 'Safari'
+
+  return `${browser} (${os})`
+}
+
 export function AdminKeys() {
   const { data, error, reload } = useApi<Any[]>('admin/keys')
+  const [tab, setTab] = useState<'keys' | 'sessions'>('keys')
+  const [sessionsData, setSessionsData] = useState<{ sessions: Any[]; total_count: number; online_count: number } | null>(null)
+  const [loadingSessions, setLoadingSessions] = useState(false)
   const [modalUser, setModalUser] = useState<Any | null>(null)
   const [generatedKey, setGeneratedKey] = useState<{
     user: Any
@@ -370,6 +391,24 @@ export function AdminKeys() {
   const [revokeFor, setRevokeFor] = useState<string | null>(null)
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
+
+  const loadSessions = useCallback(async () => {
+    setLoadingSessions(true)
+    try {
+      const res = await api<{ sessions: Any[]; total_count: number; online_count: number }>('admin/sessions')
+      setSessionsData(res)
+    } catch (e: any) {
+      setErr((e as Error).message || 'Помилка завантаження сесій.')
+    } finally {
+      setLoadingSessions(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab === 'sessions') {
+      loadSessions()
+    }
+  }, [tab, loadSessions])
 
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
@@ -417,6 +456,7 @@ export function AdminKeys() {
       })
       setPassword('')
       reload()
+      if (tab === 'sessions') loadSessions()
     } catch (e) {
       setErr((e as Error).message || 'Помилка випуску ключа.')
     } finally {
@@ -429,11 +469,45 @@ export function AdminKeys() {
     setOk('')
     try {
       await api(`admin/keys/${code}/revoke`, { method: 'POST' })
-      setOk(`Ключ доступу користувача ${code} успішно відкликано.`)
+      setOk(`Ключ доступу користувача ${code} успішно відкликано. Активні сесії анульовано.`)
       setRevokeFor(null)
       reload()
+      if (tab === 'sessions') loadSessions()
     } catch (e) {
       setErr((e as Error).message || 'Помилка відкликання ключа.')
+    }
+  }
+
+  const terminateSession = async (sessionId: number, userCode: string) => {
+    setBusy(true)
+    setErr('')
+    setOk('')
+    try {
+      await api(`admin/sessions/${sessionId}/terminate`, { method: 'POST' })
+      setOk(`Активну сесію користувача ${userCode} успішно примусово завершено.`)
+      await loadSessions()
+    } catch (e: any) {
+      setErr((e as Error).message || 'Помилка завершення сесії.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const terminateAllOtherSessions = async () => {
+    if (!window.confirm('Ви впевнені, що бажаєте примусово завершити ВСІ активні сесії інших користувачів?')) {
+      return
+    }
+    setBusy(true)
+    setErr('')
+    setOk('')
+    try {
+      const res = await api<{ ok: boolean; terminated_count: number }>('admin/sessions/terminate-all', { method: 'POST' })
+      setOk(`Примусово завершено ${res.terminated_count} сесій користувачів.`)
+      await loadSessions()
+    } catch (e: any) {
+      setErr((e as Error).message || 'Помилка завершення сесій.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -441,119 +515,293 @@ export function AdminKeys() {
     <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
         <div>
-          <h1 style={{ marginBottom: '.25rem' }}>Ключі доступу (.key)</h1>
+          <h1 style={{ marginBottom: '.25rem' }}>Безпека та доступ (.key / Сесії)</h1>
           <div className="muted" style={{ fontSize: '.88rem' }}>
-            Управління асиметричними електронними ключами ECDSA P-256 та сертифікатами доступу
+            Управління асиметричними електронними ключами ECDSA P-256, сертифікатами та активними сесіями
           </div>
         </div>
       </div>
 
-      <div className="hint" style={{ marginBottom: '1rem' }}>
-        <b>Безпека ключів за аналогією з КЕП:</b> Приватні ключі шифруються алгоритмом AES-256-GCM за допомогою пароля захисту та зберігаються виключно у власників ключів.
-        Сервер зберігає лише публічний ключ та SHA-256 відбиток для перевірки цифрового підпису при вході.
+      <div className="tabs" style={{ marginBottom: '1rem' }}>
+        <button
+          type="button"
+          className={tab === 'keys' ? 'active' : ''}
+          onClick={() => setTab('keys')}
+        >
+          <KeyRound size={16} style={{ marginRight: '.45rem' }} />
+          Ключі доступу (.key)
+        </button>
+        <button
+          type="button"
+          className={tab === 'sessions' ? 'active' : ''}
+          onClick={() => setTab('sessions')}
+        >
+          <Radio size={16} style={{ marginRight: '.45rem' }} />
+          Активні сесії
+          {sessionsData && (
+            <span
+              className="pill ok"
+              style={{
+                marginLeft: '.5rem',
+                fontSize: '.74rem',
+                padding: '2px 7px',
+                fontWeight: 700,
+              }}
+            >
+              {sessionsData.online_count} онлайн
+            </span>
+          )}
+        </button>
       </div>
 
       {err && <div className="alert danger" style={{ marginBottom: '1rem' }}>{err}</div>}
       {ok && <div className="alert success" style={{ marginBottom: '1rem' }}>{ok}</div>}
 
-      <Card>
-        <div className="table-wrap">
-          <table className="t">
-            <thead>
-              <tr>
-                <th>Користувач</th>
-                <th>Роль</th>
-                <th>Підрозділ</th>
-                <th>Стан ключа</th>
-                <th>SHA-256 відбиток</th>
-                <th>Дата випуску</th>
-                <th style={{ minWidth: 200 }}>Дії</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(u => (
-                <tr key={u.code}>
-                  <td className="nowrap">
-                    <b>{u.code}</b>
-                    <br />
-                    <small className="muted">{u.username}</small>
-                  </td>
-                  <td>{u.role_name || u.role}</td>
-                  <td>{u.unit?.code ? `${u.unit.code} — ${u.unit.name}` : '—'}</td>
-                  <td className="nowrap">
-                    {u.status === 'active' && <Pill tone="ok">Активний</Pill>}
-                    {u.status === 'revoked' && <Pill tone="bad">Відкликано</Pill>}
-                    {u.status === 'none' && <Pill tone="grey">Не випущено</Pill>}
-                  </td>
-                  <td>
-                    {u.fingerprint ? (
-                      <code style={{ fontSize: '.78rem', background: 'var(--surface-2)', padding: '2px 5px', borderRadius: 4 }}>
-                        {u.fingerprint.slice(0, 16)}…{u.fingerprint.slice(-8)}
-                      </code>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td className="nowrap">
-                    {u.issued_at ? (
-                      <small>{new Date(u.issued_at).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' })}</small>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="row" style={{ flexWrap: 'nowrap', gap: '.4rem', alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        className="btn small"
-                        style={{ whiteSpace: 'nowrap' }}
-                        onClick={() => {
-                          setModalUser(u)
-                          setGeneratedKey(null)
-                          setPassword('')
-                          setErr('')
-                        }}
-                      >
-                        {u.status === 'active' ? 'Перевипустити .key' : 'Випустити .key'}
-                      </button>
+      {tab === 'keys' ? (
+        <>
+          <div className="hint" style={{ marginBottom: '1rem' }}>
+            <b>Безпека ключів за аналогією з КЕП:</b> Приватні ключі шифруються алгоритмом AES-256-GCM за допомогою пароля захисту та зберігаються виключно у власників ключів.
+            Сервер зберігає лише публічний ключ та SHA-256 відбиток для перевірки цифрового підпису при вході.
+          </div>
 
-                      {u.status === 'active' && (
-                        revokeFor === u.code ? (
-                          <span className="row" style={{ flexWrap: 'nowrap', gap: '.3rem', alignItems: 'center' }}>
-                            <button
-                              type="button"
-                              className="btn danger small"
-                              onClick={() => revokeKey(u.code)}
-                            >
-                              Підтвердити
-                            </button>
-                            <button
-                              type="button"
-                              className="btn secondary small"
-                              onClick={() => setRevokeFor(null)}
-                            >
-                              Ні
-                            </button>
+          <Card>
+            <div className="table-wrap">
+              <table className="t">
+                <thead>
+                  <tr>
+                    <th>Користувач</th>
+                    <th>Роль</th>
+                    <th>Підрозділ</th>
+                    <th>Стан ключа</th>
+                    <th>SHA-256 відбиток</th>
+                    <th>Дата випуску</th>
+                    <th style={{ minWidth: 200 }}>Дії</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map(u => (
+                    <tr key={u.code}>
+                      <td className="nowrap">
+                        <b>{u.code}</b>
+                        <br />
+                        <small className="muted">{u.username}</small>
+                      </td>
+                      <td>{u.role_name || u.role}</td>
+                      <td>{u.unit?.code ? `${u.unit.code} — ${u.unit.name}` : '—'}</td>
+                      <td className="nowrap">
+                        {u.status === 'active' && <Pill tone="ok">Активний</Pill>}
+                        {u.status === 'revoked' && <Pill tone="bad">Відкликано</Pill>}
+                        {u.status === 'none' && <Pill tone="grey">Не випущено</Pill>}
+                      </td>
+                      <td>
+                        {u.fingerprint ? (
+                          <code style={{ fontSize: '.78rem', background: 'var(--surface-2)', padding: '2px 5px', borderRadius: 4 }}>
+                            {u.fingerprint.slice(0, 16)}…{u.fingerprint.slice(-8)}
+                          </code>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td className="nowrap">
+                        {u.issued_at ? (
+                          <small>{fmtDateTime(u.issued_at)}</small>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row" style={{ flexWrap: 'nowrap', gap: '.4rem', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn small"
+                            style={{ whiteSpace: 'nowrap' }}
+                            onClick={() => {
+                              setModalUser(u)
+                              setGeneratedKey(null)
+                              setPassword('')
+                              setErr('')
+                            }}
+                          >
+                            {u.status === 'active' ? 'Перевипустити .key' : 'Випустити .key'}
+                          </button>
+
+                          {u.status === 'active' && (
+                            revokeFor === u.code ? (
+                              <span className="row" style={{ flexWrap: 'nowrap', gap: '.3rem', alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn danger small"
+                                  onClick={() => revokeKey(u.code)}
+                                >
+                                  Підтвердити
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn secondary small"
+                                  onClick={() => setRevokeFor(null)}
+                                >
+                                  Ні
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn secondary small danger"
+                                style={{ whiteSpace: 'nowrap' }}
+                                onClick={() => setRevokeFor(u.code)}
+                              >
+                                Відкликати
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      ) : (
+        /* Секція моніторингу активних сесій */
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.75rem', marginBottom: '1rem', paddingBottom: '.75rem', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+              <span style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+                Моніторинг активних сеансів
+              </span>
+              {sessionsData && (
+                <span className="pill info" style={{ fontSize: '.78rem', fontWeight: 600 }}>
+                  Онлайн: <b>{sessionsData.online_count}</b> з {sessionsData.total_count}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn small secondary"
+                disabled={loadingSessions}
+                onClick={loadSessions}
+                title="Оновити список активних сесій"
+              >
+                <RefreshCw size={14} style={{ marginRight: '.35rem' }} className={loadingSessions ? 'spin' : ''} />
+                Оновити
+              </button>
+              {sessionsData && sessionsData.total_count > 1 && (
+                <button
+                  type="button"
+                  className="btn small danger"
+                  disabled={busy}
+                  onClick={terminateAllOtherSessions}
+                  title="Примусово завершити сесії всіх користувачів, крім власної"
+                >
+                  <ShieldAlert size={14} style={{ marginRight: '.35rem' }} />
+                  Завершити всі інші сесії
+                </button>
+              )}
+            </div>
+          </div>
+
+          {loadingSessions && !sessionsData ? (
+            <Loading />
+          ) : !sessionsData || sessionsData.sessions.length === 0 ? (
+            <div className="muted" style={{ padding: '1.5rem', textAlign: 'center' }}>
+              Активних сесій не знайдено.
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="t">
+                <thead>
+                  <tr>
+                    <th>Користувач</th>
+                    <th>Статус</th>
+                    <th>Роль / Підрозділ</th>
+                    <th>Відбиток ключа</th>
+                    <th>Пристрій / Браузер</th>
+                    <th>IP-адреса</th>
+                    <th>Вхід / Активність</th>
+                    <th style={{ minWidth: 160 }}>Дія</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionsData.sessions.map(s => (
+                    <tr key={s.id} style={s.is_current ? { background: 'rgba(59, 130, 246, 0.04)' } : undefined}>
+                      <td className="nowrap">
+                        <b>{s.user_code}</b>
+                        <br />
+                        <small className="muted">{s.username}</small>
+                        {s.full_name && s.full_name !== s.user_code && (
+                          <div style={{ fontSize: '.76rem', color: 'var(--muted)' }}>{s.full_name}</div>
+                        )}
+                      </td>
+                      <td className="nowrap">
+                        {s.is_online ? (
+                          <span style={{ color: 'var(--ok, #10b981)', display: 'inline-flex', alignItems: 'center', gap: '.35rem', fontWeight: 600, fontSize: '.84rem' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok, #10b981)', display: 'inline-block' }} />
+                            Онлайн
                           </span>
+                        ) : (
+                          <span style={{ color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: '.35rem', fontSize: '.84rem' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--muted)', display: 'inline-block' }} />
+                            Неактивний
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <Pill tone="info">{s.role_name || s.role}</Pill>
+                        {s.unit && (
+                          <div style={{ fontSize: '.76rem', color: 'var(--muted)', marginTop: '.2rem' }}>
+                            {s.unit.code}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {s.key_fingerprint ? (
+                          <code style={{ fontSize: '.76rem', background: 'var(--surface-2)', padding: '2px 5px', borderRadius: 4 }} title={s.key_fingerprint}>
+                            {s.key_fingerprint.slice(0, 12)}…{s.key_fingerprint.slice(-6)}
+                          </code>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.84rem' }} title={s.user_agent}>
+                          <Laptop size={14} className="muted" />
+                          <span>{parseDevice(s.user_agent)}</span>
+                        </div>
+                      </td>
+                      <td className="nowrap">
+                        <code style={{ fontSize: '.8rem' }}>{s.ip_address}</code>
+                      </td>
+                      <td className="nowrap" style={{ fontSize: '.8rem' }}>
+                        <div><span className="muted">Вхід:</span> {fmtDateTime(s.created_at)}</div>
+                        <div><span className="muted">Активність:</span> {fmtDateTime(s.last_activity)}</div>
+                      </td>
+                      <td>
+                        {s.is_current ? (
+                          <span className="pill info" style={{ fontWeight: 600 }}>Поточна сесія (ви)</span>
                         ) : (
                           <button
                             type="button"
-                            className="btn secondary small danger"
-                            style={{ whiteSpace: 'nowrap' }}
-                            onClick={() => setRevokeFor(u.code)}
+                            className="btn small secondary danger"
+                            disabled={busy}
+                            onClick={() => terminateSession(s.id, s.user_code)}
+                            title={`Примусово завершити сесію користувача ${s.user_code}`}
                           >
-                            Відкликати
+                            <LogOut size={13} style={{ marginRight: '.3rem' }} />
+                            Завершити сесію
                           </button>
-                        )
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Модальне вікно випуску / перевипуску ключа */}
       {modalUser && (

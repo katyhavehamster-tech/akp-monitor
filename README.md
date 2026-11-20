@@ -135,7 +135,7 @@ React 19 (Vite, TS, Web Crypto API) ──REST/JSON──► Django 5 + DRF ─�
 
 - [`docs/ACCOUNTS.txt`](docs/ACCOUNTS.txt) — повний реєстр усіх 19 облікових записів системи, опис ролей, посилання на Google Drive з ключами.
 - [SECURITY.md](SECURITY.md) — детальний опис архітектури кібербезпеки: автентифікація за ключем AKP-KEY-V1, криптографічний аудит, верифікація зліпків, захист ІзОД/ДСК, k-анонімність, захисні HTTP-заголовки.
-- [`docs/ai.md`](docs/ai.md) — записка «Як ми використали ШІ» (інструменти, рішення команди, відкинуті варіанти).
+- [`docs/ai.md`](docs/ai.md) — довідка щодо ролі допоміжних інструментів та використання ШІ (авторські рішення команди, повна автономність системи, відкинуті варіанти).
 - [`docs/architecture.md`](docs/architecture.md) — архітектура системи, модель даних, потік «одноразового внесення» та механізми безпеки.
 - [`docs/time-savings.md`](docs/time-savings.md) — розрахунок економії часу для виконавця, координатора та уповноваженої особи (`≈ 247 год/рік`).
 - [`docs/integration.md`](docs/integration.md) — карта інтеграції з відомчими ІС (СЕД, кадри, закупівлі, аудит) та поетапне бачення обміну з ІС МОУ і Порталом НАЗК.
@@ -152,5 +152,5 @@ React 19 (Vite, TS, Web Crypto API) ──REST/JSON──► Django 5 + DRF ─�
   - Backend: Python 3, Django 5, Django REST Framework, `drf-spectacular` (OpenAPI), `cryptography`, `PyYAML`, `openpyxl`, `python-docx`, `whitenoise`, `gunicorn`, `psycopg`.
   - Frontend: React 19, TypeScript, React Router 7, Recharts, `lucide-react`, Vite, Web Crypto API.
 - **Графіка:** офіційний герб Харківського національного університету внутрішніх справ із Wikimedia Commons.
-- **Інструменти ШІ під час розробки:** Claude (Anthropic) та Gemini у середовищі Google Antigravity — детально описано в [`docs/ai.md`](docs/ai.md).
+- **Допоміжні інструменти під час розробки:** Claude (Anthropic) та Gemini у середовищі Google Antigravity (використовувалися виключно як довідковий консультативний ресурс та для перевірки безпекових гіпотез; робочий контур системи є на 100% автономним і не містить ШІ-моделей) — детально у [`docs/ai.md`](docs/ai.md).
 - **Ліцензія проєкту:** [MIT License](LICENSE).
