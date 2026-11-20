@@ -2070,12 +2070,17 @@ def users(request):
         Token.objects.create(user=u)
         np = Profile.objects.create(user=u, code=code, full_name="",
                                     role=d["role"], unit=unit, position=str(d.get("position") or "").strip()[:300])
-        from .key_crypto import get_or_create_test_key_container
-        kd = get_or_create_test_key_container(code.lower(), d["role"], raw_pw)
+        pub_pem = str(d.get("public_key_pem") or "").strip()
+        fp = str(d.get("fingerprint") or "").strip()
+        if not pub_pem or not fp:
+            from .key_crypto import get_or_create_test_key_container
+            kd = get_or_create_test_key_container(code.lower(), d["role"], raw_pw)
+            pub_pem = kd["crypto"]["public_key"]
+            fp = kd["fingerprint"]
         UserAccessKey.objects.create(
             user=u,
-            public_key_pem=kd["crypto"]["public_key"],
-            fingerprint=kd["fingerprint"],
+            public_key_pem=pub_pem,
+            fingerprint=fp,
         )
         AuditLog.write(p, "створено обліковий запис", "korystuvach", code, "role", "", d["role"])
         return Response(profile_dict(np), status=201)

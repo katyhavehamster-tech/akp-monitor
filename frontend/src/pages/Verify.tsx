@@ -140,12 +140,14 @@ export default function Verify() {
               {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
             </button>
             <Link to="/public" className="btn secondary small verify-header-btn" title="Публічний реєстр заходів">
-              <span>Публічний портал</span>
+              <span className="verify-portal-text-full">Публічний портал</span>
+              <span className="verify-portal-text-short">Портал</span>
             </Link>
             <Link to="/login" className="btn primary small verify-login-btn" title="Увійти в кабінет">
               <LogIn size={15} />
               <span className="verify-login-text-full">Увійти в кабінет</span>
-              <span className="verify-login-text-short">Увійти</span>
+              <span className="verify-login-text-mid">Кабінет</span>
+              <span className="verify-login-text-short">Вхід</span>
             </Link>
           </div>
         </div>

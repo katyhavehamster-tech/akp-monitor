@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
+import { CheckCircle2, Download, KeyRound, RotateCcw, ShieldAlert, X } from 'lucide-react'
 import { api, fmtDate, type Any } from '../api'
 import { useAuth } from '../auth'
 import { Card, ErrorBox, Loading, Pill, useApi } from '../components/ui'
-import { downloadKeyFile, generateKeyFile } from '../keyFileCrypto'
+import { downloadKeyFile, generateKeyFile, type KeyFileContainer } from '../keyFileCrypto'
 
 
 const ROLES: [string, string][] = [['KOORD', 'Уповноважений (адміністратор програми)'], ['ADMIN', 'Технічний адміністратор'],
@@ -21,6 +22,15 @@ export function AdminUsers() {
   const [delFor, setDelFor] = useState<string | null>(null)
   const [pw, setPw] = useState('')
   const [ok, setOk] = useState('')
+  const [createBusy, setCreateBusy] = useState(false)
+  const [createdKeyInfo, setCreatedKeyInfo] = useState<{
+    userCode: string
+    username: string
+    role: string
+    filename: string
+    fingerprint: string
+    keyFile: KeyFileContainer
+  } | null>(null)
 
   useEffect(() => {
     if (sys.data) {
@@ -31,10 +41,56 @@ export function AdminUsers() {
 
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
+
   const create = async () => {
     setErr('')
-    try { await api('users', { body: f }); setF({ role: 'VYK' }); reload() } catch (e) { setErr((e as Error).message) }
+    const code = (f.code || '').trim().toUpperCase()
+    if (!code) {
+      setErr('Вкажіть код користувача (наприклад, U-020).')
+      return
+    }
+    const keyPassword = (f.password || 'demo').trim()
+    if (keyPassword.length < 4) {
+      setErr('Пароль захисту ключа має містити щонайменше 4 символи.')
+      return
+    }
+    setCreateBusy(true)
+    try {
+      const username = code.toLowerCase()
+      // 1. Генерація криптографічного ключа ECDSA P-256 безпосередньо у браузері
+      const { keyFile, filename } = await generateKeyFile(username, f.role || 'VYK', keyPassword)
+
+      // 2. Автоматичне завантаження згенерованого файлу ключа
+      downloadKeyFile(keyFile, filename)
+
+      // 3. Створення користувача на сервері із передачею ЛИШЕ публічного ключа
+      await api('users', {
+        body: {
+          ...f,
+          code,
+          public_key_pem: keyFile.crypto.public_key,
+          fingerprint: keyFile.fingerprint,
+        },
+      })
+
+      // 4. Відображення модального вікна успішного випуску (запобігання втраті ключа)
+      setCreatedKeyInfo({
+        userCode: code,
+        username,
+        role: f.role || 'VYK',
+        filename,
+        fingerprint: keyFile.fingerprint,
+        keyFile,
+      })
+      setF({ role: 'VYK', password: '' })
+      reload()
+    } catch (e) {
+      setErr((e as Error).message || 'Помилка створення облікового запису.')
+    } finally {
+      setCreateBusy(false)
+    }
   }
+
   const patch = async (code: string, body: Any, msg = 'Збережено.') => {
     setErr(''); setOk('')
     try { await api(`users/${code}`, { method: 'PATCH', body }); setOk(`${code}: ${msg}`); reload(); sys.reload(); await reloadMe() } catch (e) { setErr((e as Error).message) }
@@ -81,10 +137,12 @@ export function AdminUsers() {
           {units.data?.map(u => <option key={u.code} value={u.code}>{u.code} {u.name}</option>)}</select></label>
         <label className="f">Посада<input value={f.position || ''} onChange={e => setF({ ...f, position: e.target.value })} placeholder="Головний спеціаліст" /></label>
         <div className="admin-create-pw span2-lg">
-          <label className="f" style={{ flex: 1, marginBottom: 0 }}>Пароль
-            <input type="password" value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} placeholder="Введіть пароль" />
+          <label className="f" style={{ flex: 1, marginBottom: 0 }}>Пароль захисту ключа (.key)
+            <input type="password" value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} placeholder="demo" />
           </label>
-          <button type="button" className="btn" onClick={create}>Створити</button>
+          <button type="button" className="btn" disabled={createBusy} onClick={create}>
+            {createBusy ? 'Генерація ключа…' : 'Створити та випустити .key'}
+          </button>
         </div>
       </div>
       {err && <div className="alert danger">{err}</div>}
@@ -120,6 +178,79 @@ export function AdminUsers() {
         </td>
       </tr>)}
     </tbody></table></div></Card>
+
+    {/* Модальне вікно успішного створення користувача та випуску ключа */}
+    {createdKeyInfo && (
+      <div className="modal-backdrop" onClick={() => setCreatedKeyInfo(null)}>
+        <div className="modal" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-head">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+              <CheckCircle2 size={20} style={{ color: 'var(--ok, #10b981)' }} />
+              <h3 style={{ margin: 0 }}>Обліковий запис та ключ створено</h3>
+            </div>
+            <button
+              type="button"
+              className="modal-close-btn"
+              onClick={() => setCreatedKeyInfo(null)}
+              aria-label="Закрити"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="modal-body">
+            <div className="alert success" style={{ margin: 0 }}>
+              Обліковий запис <b>{createdKeyInfo.userCode}</b> успішно створено, а персональний файл ключа <b>{createdKeyInfo.filename}</b> згенеровано у браузері.
+            </div>
+
+            <div style={{ background: 'var(--surface-2, rgba(255,255,255,0.04))', border: '1px solid var(--line, #333)', borderRadius: 8, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '.65rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="muted" style={{ fontSize: '.84rem' }}>Файл ключа:</span>
+                <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{createdKeyInfo.filename}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="muted" style={{ fontSize: '.84rem' }}>Користувач / Логін:</span>
+                <span><b>{createdKeyInfo.userCode}</b> ({createdKeyInfo.username})</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="muted" style={{ fontSize: '.84rem' }}>Роль у системі:</span>
+                <Pill tone="info">{createdKeyInfo.role}</Pill>
+              </div>
+              <div>
+                <div className="muted" style={{ fontSize: '.82rem', marginBottom: '.3rem' }}>SHA-256 відбиток публічного ключа:</div>
+                <code style={{ fontSize: '.76rem', background: 'var(--surface-1, #111)', padding: '4px 8px', borderRadius: 4, display: 'block', wordBreak: 'break-all', color: 'var(--accent, #60a5fa)' }}>
+                  {createdKeyInfo.fingerprint}
+                </code>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn primary"
+              style={{ padding: '.75rem 1rem', fontSize: '.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.5rem' }}
+              onClick={() => downloadKeyFile(createdKeyInfo.keyFile, createdKeyInfo.filename)}
+            >
+              <Download size={18} />
+              <span>Завантажити ключ ({createdKeyInfo.filename})</span>
+            </button>
+
+            <div className="hint" style={{ fontSize: '.82rem', margin: 0, lineHeight: 1.45 }}>
+              Збережіть файл ключа у надійному місці. Приватний ключ існує виключно у завантаженому файлі та не передавався на сервер. Якщо автозавантаження заблоковано браузером, натисніть кнопку вище.
+            </div>
+          </div>
+
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setCreatedKeyInfo(null)}
+            >
+              Готово
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </>
 }
 
@@ -229,6 +360,11 @@ export function AdminSystem() {
 export function AdminKeys() {
   const { data, error, reload } = useApi<Any[]>('admin/keys')
   const [modalUser, setModalUser] = useState<Any | null>(null)
+  const [generatedKey, setGeneratedKey] = useState<{
+    user: Any
+    filename: string
+    keyFile: KeyFileContainer
+  } | null>(null)
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [revokeFor, setRevokeFor] = useState<string | null>(null)
@@ -237,6 +373,14 @@ export function AdminKeys() {
 
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
+
+  const closeModal = () => {
+    if (busy) return
+    setModalUser(null)
+    setGeneratedKey(null)
+    setPassword('')
+    setErr('')
+  }
 
   const issueKey = async () => {
     if (!modalUser) return
@@ -264,8 +408,13 @@ export function AdminKeys() {
         },
       })
 
-      setOk(`Ключ для ${modalUser.code} успішно випущено! Файл «${filename}» завантажено.`)
-      setModalUser(null)
+      setOk(`Ключ для ${modalUser.code} успішно випущено! Файл «${filename}» збережено.`)
+      // Не закриваємо модальне вікно, а переводимо у стан успіху для збереження/повторного завантаження
+      setGeneratedKey({
+        user: modalUser,
+        filename,
+        keyFile,
+      })
       setPassword('')
       reload()
     } catch (e) {
@@ -318,7 +467,7 @@ export function AdminKeys() {
                 <th>Стан ключа</th>
                 <th>SHA-256 відбиток</th>
                 <th>Дата випуску</th>
-                <th>Дії</th>
+                <th style={{ minWidth: 200 }}>Дії</th>
               </tr>
             </thead>
             <tbody>
@@ -353,12 +502,14 @@ export function AdminKeys() {
                     )}
                   </td>
                   <td>
-                    <div className="row" style={{ flexWrap: 'nowrap', gap: '.4rem' }}>
+                    <div className="row" style={{ flexWrap: 'nowrap', gap: '.4rem', alignItems: 'center' }}>
                       <button
                         type="button"
                         className="btn small"
+                        style={{ whiteSpace: 'nowrap' }}
                         onClick={() => {
                           setModalUser(u)
+                          setGeneratedKey(null)
                           setPassword('')
                           setErr('')
                         }}
@@ -368,7 +519,7 @@ export function AdminKeys() {
 
                       {u.status === 'active' && (
                         revokeFor === u.code ? (
-                          <span className="row" style={{ flexWrap: 'nowrap', gap: '.3rem' }}>
+                          <span className="row" style={{ flexWrap: 'nowrap', gap: '.3rem', alignItems: 'center' }}>
                             <button
                               type="button"
                               className="btn danger small"
@@ -388,6 +539,7 @@ export function AdminKeys() {
                           <button
                             type="button"
                             className="btn secondary small danger"
+                            style={{ whiteSpace: 'nowrap' }}
                             onClick={() => setRevokeFor(u.code)}
                           >
                             Відкликати
@@ -403,67 +555,141 @@ export function AdminKeys() {
         </div>
       </Card>
 
-      {/* Модальне вікно випуску ключа */}
+      {/* Модальне вікно випуску / перевипуску ключа */}
       {modalUser && (
-        <div className="modal-backdrop" onClick={() => !busy && setModalUser(null)}>
-          <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>
-                {modalUser.status === 'active' ? 'Перевипуск' : 'Випуск'} ключа доступу (.key)
-              </h3>
-              <button
-                type="button"
-                className="btn secondary icon small"
-                disabled={busy}
-                onClick={() => setModalUser(null)}
-              >
-                ✕
-              </button>
-            </div>
+        <div className="modal-backdrop" onClick={closeModal}>
+          <div className="modal" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+            {generatedKey ? (
+              // Стан успішного випуску ключа (запобігання втраті файлу)
+              <>
+                <div className="modal-head">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <CheckCircle2 size={20} style={{ color: 'var(--ok, #10b981)' }} />
+                    <h3 style={{ margin: 0 }}>Ключ доступу успішно випущено</h3>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close-btn"
+                    onClick={closeModal}
+                    aria-label="Закрити"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <b>Користувач:</b> {modalUser.code} ({modalUser.username}) — {modalUser.role_name}
-              </div>
+                <div className="modal-body">
+                  <div className="alert success" style={{ margin: 0 }}>
+                    Електронний ключ для <b>{generatedKey.user.code}</b> ({generatedKey.user.username}) успішно згенеровано та зареєстровано на сервері.
+                  </div>
 
-              <div className="hint" style={{ fontSize: '.84rem', lineHeight: 1.45 }}>
-                Пара ключів <b>ECDSA P-256</b> буде згенерована безпосередньо у вашому браузері. Приватний ключ шифрується <b>AES-256-GCM</b> за вказаним паролем і зберігається у завантаженому файлі <code>akp_{modalUser.username.toLowerCase()}.key</code>.
-                <br /><br />
-                На сервер передається <u>виключно публічний ключ</u>.
-              </div>
+                  <div style={{ background: 'var(--surface-2, rgba(255,255,255,0.04))', border: '1px solid var(--line, #333)', borderRadius: 8, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '.65rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="muted" style={{ fontSize: '.84rem' }}>Файл особистого ключа:</span>
+                      <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{generatedKey.filename}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="muted" style={{ fontSize: '.84rem' }}>Користувач / Роль:</span>
+                      <span><b>{generatedKey.user.code}</b> · <Pill tone="info">{generatedKey.user.role_name || generatedKey.user.role}</Pill></span>
+                    </div>
+                    <div>
+                      <div className="muted" style={{ fontSize: '.82rem', marginBottom: '.3rem' }}>SHA-256 відбиток публічного ключа:</div>
+                      <code style={{ fontSize: '.76rem', background: 'var(--surface-1, #111)', padding: '4px 8px', borderRadius: 4, display: 'block', wordBreak: 'break-all', color: 'var(--accent, #60a5fa)' }}>
+                        {generatedKey.keyFile.fingerprint}
+                      </code>
+                    </div>
+                  </div>
 
-              <label className="f" style={{ marginBottom: 0 }}>
-                Пароль захисту нового ключа
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Введіть надійний пароль захисту"
-                  autoFocus
-                />
-              </label>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    style={{ padding: '.75rem 1rem', fontSize: '.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.5rem' }}
+                    onClick={() => downloadKeyFile(generatedKey.keyFile, generatedKey.filename)}
+                  >
+                    <Download size={18} />
+                    <span>Завантажити ключ ({generatedKey.filename})</span>
+                  </button>
 
-              {err && <div className="alert danger">{err}</div>}
-            </div>
+                  <div className="hint" style={{ fontSize: '.82rem', margin: 0, lineHeight: 1.45 }}>
+                    Збережіть файл ключа у надійному місці. Приватний ключ існує виключно у цьому файлі та ніколи не зберігається на сервері. Якщо завантаження заблоковано браузером, натисніть кнопку вище.
+                  </div>
+                </div>
 
-            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '.6rem', marginTop: '1.25rem' }}>
-              <button
-                type="button"
-                className="btn secondary"
-                disabled={busy}
-                onClick={() => setModalUser(null)}
-              >
-                Скасувати
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy || !password.trim()}
-                onClick={issueKey}
-              >
-                {busy ? 'Генерація та випуск…' : 'Згенерувати та завантажити .key'}
-              </button>
-            </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={closeModal}
+                  >
+                    Готово
+                  </button>
+                </div>
+              </>
+            ) : (
+              // Форма введення пароля для генерації ключа
+              <>
+                <div className="modal-head">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <KeyRound size={20} className="muted" />
+                    <h3 style={{ margin: 0 }}>
+                      {modalUser.status === 'active' ? 'Перевипуск' : 'Випуск'} ключа доступу (.key)
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close-btn"
+                    disabled={busy}
+                    onClick={closeModal}
+                    aria-label="Закрити"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="modal-body">
+                  <div>
+                    <b>Користувач:</b> {modalUser.code} ({modalUser.username}) — {modalUser.role_name || modalUser.role}
+                  </div>
+
+                  <div className="hint" style={{ fontSize: '.84rem', lineHeight: 1.45 }}>
+                    Пара ключів <b>ECDSA P-256</b> буде згенерована безпосередньо у вашому браузері. Приватний ключ шифрується <b>AES-256-GCM</b> за вказаним паролем і зберігається у завантаженому файлі <code>akp_{modalUser.username.toLowerCase()}.key</code>.
+                    <br /><br />
+                    На сервер передається <u>виключно публічний ключ</u>.
+                  </div>
+
+                  <label className="f" style={{ marginBottom: 0 }}>
+                    Пароль захисту нового ключа
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="Введіть надійний пароль захисту"
+                      autoFocus
+                    />
+                  </label>
+
+                  {err && <div className="alert danger">{err}</div>}
+                </div>
+
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    disabled={busy}
+                    onClick={closeModal}
+                  >
+                    Скасувати
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={busy || !password.trim()}
+                    onClick={issueKey}
+                  >
+                    {busy ? 'Генерація та випуск…' : 'Згенерувати та завантажити .key'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
