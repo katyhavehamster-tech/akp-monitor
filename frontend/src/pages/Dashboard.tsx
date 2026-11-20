@@ -18,9 +18,19 @@ export default function Dashboard() {
   const c = m.counts, p = m.percent
   const go = (q: string) => nav(`/program/measures?${q}`)
   const pie = Object.keys(STATUS).map(k => ({ name: STATUS[k].label, value: c[k] || 0, color: STATUS[k].color })).filter(x => x.value)
-  const sections = data.by_section.map((s: Any) => ({
-    name: `Розділ ${s.code.slice(1)}`, ...Object.fromEntries(Object.keys(STATUS).map(k => [STATUS[k].label, s.counts[k] || 0])),
-  }))
+  const sections = data.by_section.map((s: Any) => {
+    const num = s.code.replace(/\D/g, '') || s.code.slice(1)
+    const fullName = `Розділ ${num} (${s.name})`
+    return {
+      code: s.code,
+      name: `Розділ ${num}`,
+      fullName,
+      total: s.total,
+      done: s.counts?.vykonano || 0,
+      percentDone: s.percent?.vykonano || 0,
+      ...Object.fromEntries(Object.keys(STATUS).map(k => [STATUS[k].label, s.counts[k] || 0])),
+    }
+  })
   const twoLevel = m.two_level_progress || {
     formal_execution_percent: p.vykonano || 0,
     formal_execution_done: c.vykonano || 0,
@@ -174,11 +184,63 @@ export default function Dashboard() {
         <StatusLegend />
       </Card>
       <Card title="Виконання за розділами">
-        <div style={{ height: narrow ? 215 : 250 }}>
-          <ResponsiveContainer><BarChart data={sections} layout="vertical" margin={{ left: 2, right: 6 }}>
-            <XAxis type="number" allowDecimals={false} fontSize={11} stroke={C.muted} /><YAxis type="category" dataKey="name" width={narrow ? 60 : 72} fontSize={11} stroke={C.muted} /><Tooltip contentStyle={CHART_TOOLTIP_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} cursor={{ fill: 'var(--surface-2)' }} />
-            {Object.keys(STATUS).map(k => <RBar key={k} dataKey={STATUS[k].label} stackId="a" fill={STATUS[k].color} />)}
-          </BarChart></ResponsiveContainer>
+        <div style={{ height: narrow ? 180 : 200 }}>
+          <ResponsiveContainer>
+            <BarChart data={sections} layout="vertical" margin={{ left: 2, right: 6, top: 4, bottom: 4 }}>
+              <XAxis type="number" allowDecimals={false} fontSize={11} stroke={C.muted} />
+              <YAxis type="category" dataKey="name" width={narrow ? 60 : 72} fontSize={11} stroke={C.muted} />
+              <Tooltip
+                contentStyle={{
+                  ...CHART_TOOLTIP_STYLE,
+                  maxWidth: 320,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.35,
+                }}
+                itemStyle={CHART_ITEM_STYLE}
+                labelStyle={{
+                  ...CHART_LABEL_STYLE,
+                  fontWeight: 700,
+                  marginBottom: 6,
+                  lineHeight: 1.3,
+                }}
+                labelFormatter={(_label, payload) => {
+                  const item = payload?.[0]?.payload
+                  return item?.fullName || _label
+                }}
+                cursor={{ fill: 'var(--surface-2)', opacity: 0.5 }}
+              />
+              {Object.keys(STATUS).map(k => <RBar key={k} dataKey={STATUS[k].label} stackId="a" fill={STATUS[k].color} />)}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="public-portal-sections-progress" style={{ marginTop: '.85rem' }}>
+          {sections.map((sec: Any) => (
+            <div
+              key={sec.code}
+              className="public-portal-sec-prog-item"
+              onClick={() => go(`section=${sec.code}`)}
+              title={`Фільтрувати за розділом: ${sec.fullName}`}
+              style={{ cursor: 'pointer' }}
+            >
+              <div className="public-portal-sec-prog-head">
+                <span className="public-portal-sec-prog-name">{sec.fullName}</span>
+                <span className="public-portal-sec-prog-val">
+                  <b>{sec.done}</b>/{sec.total} ({sec.percentDone}%)
+                </span>
+              </div>
+              <div className="public-portal-sec-prog-bar-bg">
+                <div
+                  className="public-portal-sec-prog-bar-fill"
+                  style={{
+                    width: `${sec.percentDone}%`,
+                    backgroundColor: sec.percentDone >= 80 ? '#16a34a' : sec.percentDone >= 40 ? '#2563eb' : '#eab308',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </Card>
       <Card title="Повнота звітування">

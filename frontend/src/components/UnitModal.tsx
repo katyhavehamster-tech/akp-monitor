@@ -114,10 +114,10 @@ export function UnitModal({ isOpen, onClose, onSaved, initialUnit }: UnitModalPr
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-            <Building2 size={20} className="muted" />
-            <h3 style={{ margin: 0, fontSize: '1.15rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.5rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', minWidth: 0, flex: '1 1 auto' }}>
+            <Building2 size={20} className="muted" style={{ flexShrink: 0 }} />
+            <h3 style={{ margin: 0, fontSize: '1.15rem', wordBreak: 'break-word' }}>
               {isEdit ? 'Редагувати підрозділ' : 'Новий підрозділ-виконавець'}
             </h3>
           </div>
@@ -126,7 +126,7 @@ export function UnitModal({ isOpen, onClose, onSaved, initialUnit }: UnitModalPr
             className="btn ghost mini"
             onClick={onClose}
             aria-label="Закрити"
-            style={{ padding: '4px', borderRadius: '4px' }}
+            style={{ padding: '4px', borderRadius: '4px', flexShrink: 0, marginLeft: 'auto' }}
           >
             <X size={18} />
           </button>
