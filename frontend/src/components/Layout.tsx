@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useState, type ComponentType } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, BookOpen, CalendarClock, CalendarDays, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, FileText, Flag, History,
@@ -113,9 +113,15 @@ export default function Layout() {
   if (!profile) return null
   const role = profile.role
   const cur = periods.find(p => p.code === period)
-  const groups = GROUPS.map(g => ({ ...g, items: g.items.filter(i => i[2].includes(role)) })).filter(g => g.items.length)
-  const current = GROUPS.flatMap(g => g.items).filter(i => loc.pathname.startsWith(i[0])).sort((a, b) => b[0].length - a[0].length)[0]
-  const activeGroup = groups.find(g => current && g.items.includes(current))
+  const groups = useMemo(() => {
+    return GROUPS.map(g => ({ ...g, items: g.items.filter(i => i[2].includes(role)) })).filter(g => g.items.length)
+  }, [role])
+  const current = useMemo(() => {
+    return GROUPS.flatMap(g => g.items).filter(i => loc.pathname.startsWith(i[0])).sort((a, b) => b[0].length - a[0].length)[0]
+  }, [loc.pathname])
+  const activeGroup = useMemo(() => {
+    return groups.find(g => current && g.items.includes(current))
+  }, [groups, current])
   const section = activeGroup?.label
   const sectionDefaultPath = activeGroup?.items[0]?.[0] || (role === 'VYK' ? '/my' : role === 'ADMIN' ? '/admin/users' : '/program/dashboard')
   const isDetailMeasure = loc.pathname.startsWith('/program/measures/') && loc.pathname !== '/program/measures'
@@ -130,32 +136,32 @@ export default function Layout() {
     const curPath = loc.pathname
     const curLbl = resolveLabel(curPath)
 
-    if (isDetailMeasure) {
-      setTrail([
-        { path: '/program/measures', label: 'Реєстр заходів' },
-        { path: curPath, label: `Захід ${detailCode}` },
-      ])
-      return
-    }
+    setTrail(prev => {
+      if (isDetailMeasure) {
+        if (prev.length === 2 && prev[0].path === '/program/measures' && prev[1].path === curPath) {
+          return prev
+        }
+        return [
+          { path: '/program/measures', label: 'Реєстр заходів' },
+          { path: curPath, label: `Захід ${detailCode}` },
+        ]
+      }
 
-    if (curPath === sectionDefaultPath) {
-      setTrail([{ path: curPath, label: curLbl }])
-      return
-    }
+      if (curPath === sectionDefaultPath) {
+        if (prev.length === 1 && prev[0].path === curPath && prev[0].label === curLbl) {
+          return prev
+        }
+        return [{ path: curPath, label: curLbl }]
+      }
 
-    // Якщо це перехід між основними вкладками одного розділу — не нагромаджувати безкінечний ланцюг
-    const isTopLevelItem = activeGroup?.items.some(i => i[0] === curPath)
-    if (isTopLevelItem) {
-      setTrail(prev => {
+      const isTopLevelItem = activeGroup?.items.some(i => i[0] === curPath)
+      if (isTopLevelItem) {
         const last = prev[prev.length - 1]
         if (last && last.path === curPath) return prev
         const prevPoint = last && last.path !== curPath ? [last] : []
         return [...prevPoint, { path: curPath, label: curLbl }].slice(-2)
-      })
-      return
-    }
+      }
 
-    setTrail(prev => {
       const idx = prev.findIndex(item => item.path === curPath || item.label === curLbl)
       if (idx !== -1) {
         return prev.slice(0, idx + 1)
