@@ -111,10 +111,10 @@ export default function Layout() {
   const activeGroup = useMemo(() => {
     return groups.find(g => current && g.items.includes(current))
   }, [groups, current])
-  const section = role === 'VYK' && isDetailMeasure ? 'Мій кабінет' : activeGroup?.label
-  const sectionDefaultPath = role === 'VYK' ? '/my' : (activeGroup?.items[0]?.[0] || (role === 'ADMIN' ? '/admin/users' : '/program/dashboard'))
   const isDetailMeasure = loc.pathname.startsWith('/program/measures/') && loc.pathname !== '/program/measures'
   const detailCode = isDetailMeasure ? loc.pathname.split('/').pop() : null
+  const section = role === 'VYK' && isDetailMeasure ? 'Мій кабінет' : activeGroup?.label
+  const sectionDefaultPath = role === 'VYK' ? '/my' : (activeGroup?.items[0]?.[0] || (role === 'ADMIN' ? '/admin/users' : '/program/dashboard'))
   const currentLabel = isDetailMeasure ? (role === 'VYK' ? (detailCode || '') : `Захід ${detailCode}`) : (current?.[1] || 'АКП-Монітор')
   const initials = (profile.unit?.code || profile.role).slice(0, 3)
   const showSidebarLabels = !collapsed || open
