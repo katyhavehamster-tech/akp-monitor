@@ -1179,9 +1179,12 @@ class OwaspSecurityTests(Base):
         self.assertEqual(r_chal.status_code, 401)
         self.assertIn("закінчився", r_chal.json().get("detail", ""))
 
-        # 2. Будь-який автентифікований запит повертає 401 через перевірку в profile()
-        c_auth = self.client_for("u-006")
-        r_me = c_auth.get("/api/me")
+        # 2. Якщо токен уже існував до спливу терміну дії, запит блокується з 401 через profile()
+        from rest_framework.authtoken.models import Token
+        tok, _ = Token.objects.get_or_create(user=u)
+        c_tok = APIClient()
+        c_tok.credentials(HTTP_AUTHORIZATION=f"Token {tok.key}")
+        r_me = c_tok.get("/api/auth/me")
         self.assertEqual(r_me.status_code, 401)
 
     def test_last_admin_protection(self):
