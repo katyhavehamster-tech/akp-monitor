@@ -19,6 +19,7 @@ const Passport = lazy(() => import('./pages/Passport'))
 const Surveys = lazy(() => import('./pages/Surveys'))
 const MyMeasures = lazy(() => import('./pages/MyMeasures'))
 const AdminUsers = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminUsers })))
+const AdminKeys = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminKeys })))
 const AdminPeriods = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminPeriods })))
 const AdminSystem = lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminSystem })))
 const Verify = lazy(() => import('./pages/Verify'))
@@ -64,6 +65,7 @@ export default function App() {
           <Route path="/program/passport" element={<Passport />} />
           <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
           <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/keys" element={<AdminKeys />} />
           <Route path="/admin/periods" element={<AdminPeriods />} />
           <Route path="/admin/system" element={<AdminSystem />} />
           <Route path="*" element={<Home />} />

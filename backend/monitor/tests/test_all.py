@@ -26,9 +26,21 @@ class Base(TestCase):
 
     def client_for(self, code):
         c = APIClient()
-        r = c.post("/api/auth/login", {"username": code, "password": "demo"}, format="json")
-        self.assertEqual(r.status_code, 200, r.content)
-        c.credentials(HTTP_AUTHORIZATION="Token " + r.json()["token"])
+        from monitor.key_crypto import get_or_create_test_key_container, sign_challenge_with_key_container
+        r_chal = c.post("/api/auth/challenge", {"login": code}, format="json")
+        self.assertEqual(r_chal.status_code, 200, r_chal.content)
+        chal_data = r_chal.json()
+
+        kf = get_or_create_test_key_container(code.lower())
+        sig = sign_challenge_with_key_container(kf, "demo", chal_data["challenge"])
+
+        r_auth = c.post("/api/auth/login-key", {
+            "login": code,
+            "challenge_id": chal_data["challenge_id"],
+            "signature": sig,
+        }, format="json")
+        self.assertEqual(r_auth.status_code, 200, r_auth.content)
+        c.credentials(HTTP_AUTHORIZATION="Token " + r_auth.json()["token"])
         return c
 
 
@@ -284,19 +296,34 @@ class Security(Base):
         self.assertIn("csrfToken", r_ov.json())
         self.assertIn("sections", r_ov.json())
 
-        # 3. Вхід за логіном/паролем із передачею X-CSRFToken
-        r_login = anon.post("/api/auth/login", {
-            "username": "u-002", "password": "demo"
+        # 3. Вхід за ключем із передачею X-CSRFToken
+        from monitor.key_crypto import get_or_create_test_key_container, sign_challenge_with_key_container
+        r_chal = anon.post("/api/auth/challenge", {"login": "u-002"}, format="json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(r_chal.status_code, 200, r_chal.content)
+        chal_data = r_chal.json()
+        kf = get_or_create_test_key_container("u-002")
+        sig = sign_challenge_with_key_container(kf, "demo", chal_data["challenge"])
+
+        r_login = anon.post("/api/auth/login-key", {
+            "login": "u-002",
+            "challenge_id": chal_data["challenge_id"],
+            "signature": sig,
         }, format="json", HTTP_X_CSRFTOKEN=token)
         self.assertEqual(r_login.status_code, 200, r_login.content)
         self.assertIn("token", r_login.json())
 
-        # 4. Вхід безпосередньо без попередньої сесії
-        fresh_client = APIClient(enforce_csrf_checks=True)
-        r_direct = fresh_client.post("/api/auth/login", {
-            "username": "u-002", "password": "demo"
-        }, format="json")
-        self.assertEqual(r_direct.status_code, 200, r_direct.content)
+        # 4. Захист від Replay-атаки: повторне надсилання того самого challenge_id повертає 400
+        r_replay = anon.post("/api/auth/login-key", {
+            "login": "u-002",
+            "challenge_id": chal_data["challenge_id"],
+            "signature": sig,
+        }, format="json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(r_replay.status_code, 400)
+
+        # 5. Спроба класичного входу лише за паролем заблокована (HTTP 400)
+        r_legacy = anon.post("/api/auth/login", {"username": "u-002", "password": "demo"}, format="json")
+        self.assertEqual(r_legacy.status_code, 400)
+        self.assertIn("Класичний вхід", r_legacy.json()["detail"])
 
     def test_logout_revokes_token_and_login_rate_limit(self):
         from django.core.cache import cache
@@ -308,9 +335,9 @@ class Security(Base):
 
         anon = APIClient()
         for _ in range(10):
-            r = anon.post("/api/auth/login", {"username": "u-002", "password": "wrong"}, format="json")
+            r = anon.post("/api/auth/challenge", {"login": "rate_user_test"}, format="json")
             self.assertEqual(r.status_code, 400)
-        r_blocked = anon.post("/api/auth/login", {"username": "u-002", "password": "wrong"}, format="json")
+        r_blocked = anon.post("/api/auth/challenge", {"login": "rate_user_test"}, format="json")
         self.assertEqual(r_blocked.status_code, 429)
         cache.clear()
 
@@ -709,21 +736,19 @@ class ReportVerification(Base):
 class OwaspSecurityTests(Base):
     def test_login_rate_limiting_and_enumeration(self):
         client = APIClient()
-        # 1. Неіснуючий логін та невірний пароль повертають ідентичну помилку
-        r1 = client.post("/api/auth/login", {"username": "nonexistent_user", "password": "wrongpassword"}, format="json")
+        cache.clear()
+        # 1. Неіснуючий логін повертає 400
+        r1 = client.post("/api/auth/challenge", {"login": "nonexistent_user"}, format="json")
         self.assertEqual(r1.status_code, 400)
-        self.assertEqual(r1.json()["detail"], "Невірний логін або пароль.")
-
-        r2 = client.post("/api/auth/login", {"username": "u-001", "password": "wrongpassword"}, format="json")
-        self.assertEqual(r2.status_code, 400)
-        self.assertEqual(r2.json()["detail"], "Невірний логін або пароль.")
+        self.assertEqual(r1.json()["detail"], "Користувача не знайдено або відсутній активний ключ доступу.")
 
         # 2. Rate limiting: не більше 10 спроб на хвилину
         for _ in range(8):
-            client.post("/api/auth/login", {"username": "rate_test_user", "password": "wrong"}, format="json")
-        r_throttle = client.post("/api/auth/login", {"username": "rate_test_user", "password": "wrong"}, format="json")
+            client.post("/api/auth/challenge", {"login": "rate_test_user"}, format="json")
+        r_throttle = client.post("/api/auth/challenge", {"login": "rate_test_user"}, format="json")
         self.assertEqual(r_throttle.status_code, 429)
         self.assertEqual(r_throttle.json()["detail"], "Забагато спроб входу. Спробуйте пізніше.")
+        cache.clear()
 
     def test_audit_chain_repair_command(self):
         # Перевірка команди відновлення ланцюжка
@@ -853,17 +878,16 @@ class OwaspSecurityTests(Base):
         client = APIClient()
         cache.clear()
         malicious_user = "admin\r\n[AUDIT] fake_admin injected successful login\x00\x1b"
-        r = client.post("/api/auth/login", {"username": malicious_user, "password": "wrong_password_test"}, format="json")
+        r = client.post("/api/auth/challenge", {"login": malicious_user}, format="json")
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json()["detail"], "Невірний логін або пароль.")
+        self.assertEqual(r.json()["detail"], "Користувача не знайдено або відсутній активний ключ доступу.")
 
-        last_log = AuditLog.objects.filter(action="невдала спроба входу").order_by("-id").first()
+        last_log = AuditLog.objects.filter(action__contains="невдала спроба").order_by("-id").first()
         self.assertIsNotNone(last_log)
         self.assertNotIn("\r", last_log.obj_id)
         self.assertNotIn("\n", last_log.obj_id)
         self.assertNotIn("\x00", last_log.obj_id)
-        self.assertNotIn("wrong_password_test", last_log.old_value)
-        self.assertNotIn("wrong_password_test", last_log.new_value)
+
 
     def test_evidence_max_size_limit_20mb(self):
         """Перевірка жорсткого обмеження розміру файлу Evidence (20 МБ)."""
@@ -913,6 +937,61 @@ class OwaspSecurityTests(Base):
         self.assertEqual(drf_resp.status_code, 500)
         self.assertEqual(json.loads(drf_resp.content)["detail"], "Внутрішня помилка сервера. Спробуйте пізніше.")
         self.assertNotIn("Секретна помилка", drf_resp.content.decode("utf-8"))
+
+    def test_key_file_crypto_and_admin_key_management(self):
+        """Перевірка протоколу Challenge-Response, управління ключами та захисту від атак."""
+        admin_c = self.client_for("u-001")
+
+        # 1. Список ключів у тех-адмінці
+        r_list = admin_c.get("/api/admin/keys")
+        self.assertEqual(r_list.status_code, 200)
+        keys_data = r_list.json()
+        self.assertGreater(len(keys_data), 0)
+        u2 = next(x for x in keys_data if x["code"] == "U-002")
+        self.assertEqual(u2["status"], "active")
+        self.assertTrue(bool(u2["fingerprint"]))
+
+        # 2. Відкликання ключа користувача
+        r_rev = admin_c.post("/api/admin/keys/U-002/revoke")
+        self.assertEqual(r_rev.status_code, 200)
+
+        # 3. Вхід для користувача з відкликаним ключем неможливий
+        anon = APIClient()
+        r_chal = anon.post("/api/auth/challenge", {"login": "u-002"}, format="json")
+        self.assertEqual(r_chal.status_code, 400)
+        self.assertEqual(r_chal.json()["detail"], "Користувача не знайдено або відсутній активний ключ доступу.")
+
+        # 4. Випуск нового ключа через API (реєстрація публічного ключа)
+        from monitor.key_crypto import generate_key_file, sign_challenge_with_key_container
+        new_kf = generate_key_file("u-002", "KOORD", "super_secret_pw_123")
+        r_reg = admin_c.post("/api/admin/keys/register", {
+            "user_code": "U-002",
+            "public_key_pem": new_kf["crypto"]["public_key"],
+            "fingerprint": new_kf["fingerprint"],
+        }, format="json")
+        self.assertEqual(r_reg.status_code, 201)
+        self.assertEqual(r_reg.json()["fingerprint"], new_kf["fingerprint"])
+
+        # 5. Успішний вхід за новим ключем
+        r_chal2 = anon.post("/api/auth/challenge", {"login": "u-002"}, format="json")
+        self.assertEqual(r_chal2.status_code, 200)
+        sig = sign_challenge_with_key_container(new_kf, "super_secret_pw_123", r_chal2.json()["challenge"])
+        r_auth = anon.post("/api/auth/login-key", {
+            "login": "u-002",
+            "challenge_id": r_chal2.json()["challenge_id"],
+            "signature": sig,
+        }, format="json")
+        self.assertEqual(r_auth.status_code, 200)
+        self.assertIn("token", r_auth.json())
+
+        # 6. Перевірка команди generate_local_keys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            call_command("generate_local_keys", "--password", "test_pw", "--output", tmp_dir, "--user", "u-001")
+            key_files = list(Path(tmp_dir).glob("*.key"))
+            self.assertEqual(len(key_files), 1)
+            self.assertTrue(key_files[0].name.startswith("akp_u-001"))
+
 
 
 

@@ -62,6 +62,32 @@ class Profile(models.Model):
     def __str__(self):
         return f"{self.code} ({self.role})"
 
+    @property
+    def active_key(self):
+        return self.user.access_keys.filter(is_revoked=False).order_by("-created_at").first()
+
+    @property
+    def latest_key(self):
+        return self.user.access_keys.order_by("-created_at").first()
+
+
+class UserAccessKey(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="access_keys")
+    public_key_pem = models.TextField("Публічний ключ (PEM)")
+    fingerprint = models.CharField("SHA-256 відбиток", max_length=64, db_index=True)
+    is_revoked = models.BooleanField("Відкликано", default=False)
+    created_at = models.DateTimeField("Дата випуску", default=timezone.now)
+    revoked_at = models.DateTimeField("Дата відкликання", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Ключ доступу"
+        verbose_name_plural = "Ключі доступу"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        status = "Відкликано" if self.is_revoked else "Активний"
+        return f"{self.user.username} [{self.fingerprint[:16]}...] ({status})"
+
 
 class Program(models.Model):
     code = models.CharField(max_length=50, unique=True)

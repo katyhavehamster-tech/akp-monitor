@@ -5,6 +5,10 @@ from . import views as v
 urlpatterns = [
     path("auth/csrf", v.csrf_token_view),
     path("auth/csrf/", v.csrf_token_view),
+    path("auth/challenge", v.auth_challenge),
+    path("auth/challenge/", v.auth_challenge),
+    path("auth/login-key", v.auth_login_key),
+    path("auth/login-key/", v.auth_login_key),
     path("auth/login", v.login),
     path("auth/login/", v.login),
     path("auth/logout", v.logout),
@@ -56,5 +60,12 @@ urlpatterns = [
     path("surveys/<int:pk>", v.survey_delete),
     path("users", v.users),
     path("users/<str:code>", v.user_update),
+    path("admin/keys", v.admin_keys),
+    path("admin/keys/", v.admin_keys),
+    path("admin/keys/register", v.admin_key_register),
+    path("admin/keys/register/", v.admin_key_register),
+    path("admin/keys/<str:code>/revoke", v.admin_key_revoke),
+    path("admin/keys/<str:code>/revoke/", v.admin_key_revoke),
     path("system/health", v.system_health),
+
 ]

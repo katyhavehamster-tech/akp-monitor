@@ -2,7 +2,7 @@ import { useEffect, useState, type ComponentType } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, BookOpen, CalendarClock, CalendarDays, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, FileText, Flag, History,
-  LayoutDashboard, Lightbulb, ListChecks, LogOut, Menu, MessageSquareText, Moon, PanelLeftClose, PanelLeftOpen,
+  KeyRound, LayoutDashboard, Lightbulb, ListChecks, LogOut, Menu, MessageSquareText, Moon, PanelLeftClose, PanelLeftOpen,
   Settings, ShieldAlert, Sun, Users, X,
 } from 'lucide-react'
 import { fmtDate } from '../api'
@@ -79,6 +79,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   ] },
   { label: 'Адміністрування', items: [
     ['/admin/users', 'Користувачі', ['ADMIN'], Users],
+    ['/admin/keys', 'Ключі доступу (.key)', ['ADMIN'], KeyRound],
     ['/admin/periods', 'Звітні вікна', ['ADMIN'], CalendarClock],
     ['/admin/system', 'Налаштування і стан системи', ['ADMIN'], Settings],
   ] },

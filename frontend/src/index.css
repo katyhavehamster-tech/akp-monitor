@@ -837,6 +837,73 @@ textarea { min-height: 110px; resize: vertical; }
 .login-fields { display: flex; flex-direction: column; gap: 1rem; }
 .login-actions { margin-top: .25rem; }
 .login-submit-btn { width: 100%; justify-content: center; font-size: 1rem; padding: .65rem 1rem; font-weight: 600; }
+
+/* Вхід за файловим ключем (.key) */
+.login-key-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.15rem 1rem;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: center;
+  transition: all .15s var(--ease);
+}
+.login-key-dropzone:hover,
+.login-key-dropzone.dragover {
+  border-color: var(--accent);
+  background: var(--accent-subtle, rgba(37, 99, 235, 0.08));
+}
+.login-key-drop-icon {
+  color: var(--accent);
+  opacity: .85;
+}
+.login-key-loaded {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .75rem .85rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle, rgba(37, 99, 235, 0.06));
+}
+.login-key-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  flex-shrink: 0;
+}
+.login-key-filename {
+  font-weight: 600;
+  font-size: .88rem;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.login-key-fp {
+  font-size: .72rem;
+  color: var(--muted);
+  margin-top: .15rem;
+  line-height: 1.3;
+}
+.login-key-fp code {
+  font-family: monospace;
+  background: var(--surface);
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
 .users { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .55rem; }
 .user-card {
   all: unset;

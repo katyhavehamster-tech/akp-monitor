@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { api, fmtDate, type Any } from '../api'
 import { useAuth } from '../auth'
 import { Card, ErrorBox, Loading, Pill, useApi } from '../components/ui'
+import { downloadKeyFile, generateKeyFile } from '../keyFileCrypto'
+
 
 const ROLES: [string, string][] = [['KOORD', 'Уповноважений (адміністратор програми)'], ['ADMIN', 'Технічний адміністратор'],
   ['KER', 'Керівник'], ['VYK', 'Виконавець'], ['ANAL', 'Аналітик']]
@@ -223,3 +225,249 @@ export function AdminSystem() {
     </div>
   </>
 }
+
+export function AdminKeys() {
+  const { data, error, reload } = useApi<Any[]>('admin/keys')
+  const [modalUser, setModalUser] = useState<Any | null>(null)
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [revokeFor, setRevokeFor] = useState<string | null>(null)
+  const [err, setErr] = useState('')
+  const [ok, setOk] = useState('')
+
+  if (error) return <ErrorBox msg={error} />
+  if (!data) return <Loading />
+
+  const issueKey = async () => {
+    if (!modalUser) return
+    const pw = password.trim()
+    if (!pw || pw.length < 4) {
+      setErr('Пароль захисту має містити щонайменше 4 символи.')
+      return
+    }
+
+    setBusy(true)
+    setErr('')
+    try {
+      // 1. Локальна генерація пари ключів у браузері через Web Crypto API
+      const { keyFile, filename } = await generateKeyFile(modalUser.username, modalUser.role, pw)
+
+      // 2. Автоматичне завантаження файлу .key на комп'ютер адміністратора
+      downloadKeyFile(keyFile, filename)
+
+      // 3. Реєстрація публічного ключа на сервері (приватний ключ НЕ передається)
+      await api('admin/keys/register', {
+        body: {
+          user_code: modalUser.code,
+          public_key_pem: keyFile.crypto.public_key,
+          fingerprint: keyFile.fingerprint,
+        },
+      })
+
+      setOk(`Ключ для ${modalUser.code} успішно випущено! Файл «${filename}» завантажено.`)
+      setModalUser(null)
+      setPassword('')
+      reload()
+    } catch (e) {
+      setErr((e as Error).message || 'Помилка випуску ключа.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revokeKey = async (code: string) => {
+    setErr('')
+    setOk('')
+    try {
+      await api(`admin/keys/${code}/revoke`, { method: 'POST' })
+      setOk(`Ключ доступу користувача ${code} успішно відкликано.`)
+      setRevokeFor(null)
+      reload()
+    } catch (e) {
+      setErr((e as Error).message || 'Помилка відкликання ключа.')
+    }
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+        <div>
+          <h1 style={{ marginBottom: '.25rem' }}>Ключі доступу (.key)</h1>
+          <div className="muted" style={{ fontSize: '.88rem' }}>
+            Управління асиметричними електронними ключами ECDSA P-256 та сертифікатами доступу
+          </div>
+        </div>
+      </div>
+
+      <div className="hint" style={{ marginBottom: '1rem' }}>
+        <b>Безпека ключів за аналогією з КЕП:</b> Приватні ключі шифруються алгоритмом AES-256-GCM за допомогою пароля захисту та зберігаються виключно у власників ключів.
+        Сервер зберігає лише публічний ключ та SHA-256 відбиток для перевірки цифрового підпису при вході.
+      </div>
+
+      {err && <div className="alert danger" style={{ marginBottom: '1rem' }}>{err}</div>}
+      {ok && <div className="alert success" style={{ marginBottom: '1rem' }}>{ok}</div>}
+
+      <Card>
+        <div className="table-wrap">
+          <table className="t">
+            <thead>
+              <tr>
+                <th>Користувач</th>
+                <th>Роль</th>
+                <th>Підрозділ</th>
+                <th>Стан ключа</th>
+                <th>SHA-256 відбиток</th>
+                <th>Дата випуску</th>
+                <th>Дії</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map(u => (
+                <tr key={u.code}>
+                  <td className="nowrap">
+                    <b>{u.code}</b>
+                    <br />
+                    <small className="muted">{u.username}</small>
+                  </td>
+                  <td>{u.role_name || u.role}</td>
+                  <td>{u.unit?.code ? `${u.unit.code} — ${u.unit.name}` : '—'}</td>
+                  <td className="nowrap">
+                    {u.status === 'active' && <Pill tone="ok">Активний</Pill>}
+                    {u.status === 'revoked' && <Pill tone="bad">Відкликано</Pill>}
+                    {u.status === 'none' && <Pill tone="grey">Не випущено</Pill>}
+                  </td>
+                  <td>
+                    {u.fingerprint ? (
+                      <code style={{ fontSize: '.78rem', background: 'var(--surface-2)', padding: '2px 5px', borderRadius: 4 }}>
+                        {u.fingerprint.slice(0, 16)}…{u.fingerprint.slice(-8)}
+                      </code>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td className="nowrap">
+                    {u.issued_at ? (
+                      <small>{new Date(u.issued_at).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' })}</small>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="row" style={{ flexWrap: 'nowrap', gap: '.4rem' }}>
+                      <button
+                        type="button"
+                        className="btn small"
+                        onClick={() => {
+                          setModalUser(u)
+                          setPassword('')
+                          setErr('')
+                        }}
+                      >
+                        {u.status === 'active' ? 'Перевипустити .key' : 'Випустити .key'}
+                      </button>
+
+                      {u.status === 'active' && (
+                        revokeFor === u.code ? (
+                          <span className="row" style={{ flexWrap: 'nowrap', gap: '.3rem' }}>
+                            <button
+                              type="button"
+                              className="btn danger small"
+                              onClick={() => revokeKey(u.code)}
+                            >
+                              Підтвердити
+                            </button>
+                            <button
+                              type="button"
+                              className="btn secondary small"
+                              onClick={() => setRevokeFor(null)}
+                            >
+                              Ні
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn secondary small danger"
+                            onClick={() => setRevokeFor(u.code)}
+                          >
+                            Відкликати
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Модальне вікно випуску ключа */}
+      {modalUser && (
+        <div className="modal-backdrop" onClick={() => !busy && setModalUser(null)}>
+          <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>
+                {modalUser.status === 'active' ? 'Перевипуск' : 'Випуск'} ключа доступу (.key)
+              </h3>
+              <button
+                type="button"
+                className="btn secondary icon small"
+                disabled={busy}
+                onClick={() => setModalUser(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <b>Користувач:</b> {modalUser.code} ({modalUser.username}) — {modalUser.role_name}
+              </div>
+
+              <div className="hint" style={{ fontSize: '.84rem', lineHeight: 1.45 }}>
+                Пара ключів <b>ECDSA P-256</b> буде згенерована безпосередньо у вашому браузері. Приватний ключ шифрується <b>AES-256-GCM</b> за вказаним паролем і зберігається у завантаженому файлі <code>akp_{modalUser.username.toLowerCase()}.key</code>.
+                <br /><br />
+                На сервер передається <u>виключно публічний ключ</u>.
+              </div>
+
+              <label className="f" style={{ marginBottom: 0 }}>
+                Пароль захисту нового ключа
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Введіть надійний пароль захисту"
+                  autoFocus
+                />
+              </label>
+
+              {err && <div className="alert danger">{err}</div>}
+            </div>
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '.6rem', marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={busy}
+                onClick={() => setModalUser(null)}
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy || !password.trim()}
+                onClick={issueKey}
+              >
+                {busy ? 'Генерація та випуск…' : 'Згенерувати та завантажити .key'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+

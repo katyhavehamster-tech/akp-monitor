@@ -17,8 +17,9 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
+from monitor.key_crypto import get_or_create_test_key_container
 from monitor.models import (AuditLog, DeadlineChange, Evidence, Execution, Measure, Organ, Profile, Program,
-                            ReportingPeriod, Risk, RiskMeasurement, Section, SystemSettings, Unit)
+                            ReportingPeriod, Risk, RiskMeasurement, Section, SystemSettings, Unit, UserAccessKey)
 
 DATA = Path(settings.BASE_DIR) / "data" / "dataset" / "dani"
 DEMO_PASSWORD = "demo"
@@ -80,6 +81,13 @@ class Command(BaseCommand):
             profiles[r["id"]] = Profile.objects.create(
                 user=u, code=r["id"], full_name="", role=r["rol"],
                 unit=units.get(r["pidrozdil_id"]), position=r["posada"],
+            )
+            # Реєструємо первинний електронний ключ доступу
+            kd = get_or_create_test_key_container(r["id"].lower(), r["rol"], DEMO_PASSWORD)
+            UserAccessKey.objects.create(
+                user=u,
+                public_key_pem=kd["crypto"]["public_key"],
+                fingerprint=kd["fingerprint"],
             )
 
         risks = {}

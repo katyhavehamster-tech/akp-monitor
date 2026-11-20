@@ -1,11 +1,14 @@
 """REST API AKP Monitor. Документація: /api/docs/ (Swagger), схема: /api/schema/."""
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
 import io
 import logging
 import re
+import secrets
+import uuid
 import zipfile
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -40,8 +43,10 @@ logger = logging.getLogger("akp.security")
 from . import rules as R
 from .access import (AUDIT, CONTENT_EDIT, MEASURE_MANAGE, SURVEYS, SURVEYS_EDIT, SURVEYS_VIEW,
                      TECH, VIEW_ALL, can_see_measure, profile, require, scoped_measures)
+from .key_crypto import calculate_public_key_fingerprint, verify_key_signature
 from .models import (AuditLog, Comment, DeadlineChange, Evidence, Execution, Measure, Profile, Program,
-                     Recommendation, ReportingPeriod, Risk, Role, Section, Survey, SystemSettings, Unit)
+                     Recommendation, ReportingPeriod, Risk, Role, Section, Survey, SystemSettings, Unit,
+                     UserAccessKey)
 from .surveys import compare as compare_surveys
 from .surveys import group_options, parse_csv, parse_survey_file
 
@@ -405,55 +410,200 @@ def public_measures(request):
     })
 
 
+def _check_auth_rate_limit(request, username: str = ""):
+    """Перевірка обмеження частоти запитів автентифікації: <= 10 запитів/хв."""
+    ip = _client_ip(request)
+    ip_hash = hashlib.sha256(ip.encode("utf-8")).hexdigest()[:32]
+    ip_key = f"auth_rate:ip:{ip_hash}"
+    ip_att = cache.get(ip_key, 0)
+
+    user_key = None
+    user_att = 0
+    clean_username = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", "", str(username or "")).strip().lower()[:64]
+    if clean_username:
+        user_hash = hashlib.sha256(clean_username.encode("utf-8")).hexdigest()[:32]
+        user_key = f"auth_rate:u:{user_hash}"
+        user_att = cache.get(user_key, 0)
+
+    if ip_att >= 10 or user_att >= 10:
+        return False, ip_key, user_key, ip_att, user_att
+    return True, ip_key, user_key, ip_att, user_att
+
+
+def _bump_auth_rate(ip_key, user_key, ip_att, user_att):
+    cache.set(ip_key, ip_att + 1, 60)
+    if user_key:
+        cache.set(user_key, user_att + 1, 60)
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 @ensure_csrf_cookie
-def login(request):
-    raw_username = str(request.data.get("username") or "")
-    password = str(request.data.get("password") or "")
+def auth_challenge(request):
+    """Генерація одноразового криптографічного виклику (Challenge) для входу за ключем (.key)."""
+    raw_login = str(request.data.get("login") or request.data.get("username") or "")
+    clean_login = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", "", raw_login).strip()
+    safe_log_username = clean_login[:30] if clean_login else "unknown"
+    login_val = clean_login.lower()[:64]
 
-    # Захист від Log Injection (CWE-117): видалення \r, \n та керуючих символів
-    clean_username = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", "", raw_username).strip()
-    safe_log_username = clean_username[:30] if clean_username else "unknown"
-    username = clean_username.lower()[:64]
+    raw_fp = str(request.data.get("fingerprint") or "").strip()
+    safe_fp = re.sub(r"[^a-fA-F0-9]", "", raw_fp).lower()[:64]
 
-    ip = _client_ip(request)
-    user_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()[:32] if username else None
-    user_key = f"login_fail:u:{user_hash}" if user_hash else None
-    ip_key = f"login_fail:ip:{hashlib.sha256(ip.encode('utf-8')).hexdigest()[:32]}"
-
-    user_att = cache.get(user_key, 0) if user_key else 0
-    ip_att = cache.get(ip_key, 0)
-
-    if user_att >= 10 or ip_att >= 10:
+    ok, ip_key, user_key, ip_att, user_att = _check_auth_rate_limit(request, login_val)
+    if not ok:
         return Response(
             {"detail": "Забагато спроб входу. Спробуйте пізніше."},
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    if not username or not password:
-        cache.set(ip_key, ip_att + 1, 60)
-        AuditLog.write(None, "невдала спроба входу", "korystuvach", safe_log_username)
-        return Response({"detail": "Невірний логін або пароль."}, status=400)
+    if not login_val:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба отримання виклику (порожній логін)", "korystuvach", safe_log_username, field="key_fingerprint", new=safe_fp)
+        return Response({"detail": "Вкажіть логін користувача або завантажте файл ключа."}, status=400)
 
-    u = authenticate(username=username, password=password)
-    if not u or not hasattr(u, "profile"):
-        cache.set(ip_key, ip_att + 1, 60)
-        if user_key:
-            cache.set(user_key, user_att + 1, 60)
-        AuditLog.write(None, "невдала спроба входу", "korystuvach", safe_log_username)
-        return Response({"detail": "Невірний логін або пароль."}, status=400)
+    user = User.objects.filter(Q(username__iexact=login_val) | Q(profile__code__iexact=login_val)).select_related("profile").first()
+    if not user or not user.is_active:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба отримання виклику (невідомий користувач)", "korystuvach", safe_log_username, field="key_fingerprint", new=safe_fp)
+        return Response({"detail": "Користувача не знайдено або відсутній активний ключ доступу."}, status=400)
+
+    keys = user.access_keys.filter(is_revoked=False)
+    if safe_fp:
+        key = keys.filter(fingerprint=safe_fp).first()
+    else:
+        key = keys.order_by("-created_at").first()
+
+    if not key:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба отримання виклику (немає активного ключа)", "korystuvach", safe_log_username, field="key_fingerprint", new=safe_fp)
+        return Response({"detail": "Користувача не знайдено або відсутній активний ключ доступу."}, status=400)
+
+    challenge_raw = secrets.token_bytes(32)
+    challenge_b64 = base64.b64encode(challenge_raw).decode("ascii")
+    challenge_id = uuid.uuid4().hex
+
+    cache.set(
+        f"auth_chal:{challenge_id}",
+        {
+            "user_id": user.id,
+            "key_id": key.id,
+            "challenge": challenge_b64,
+            "fingerprint": key.fingerprint,
+        },
+        timeout=120,
+    )
+
+    return Response({
+        "ok": True,
+        "challenge_id": challenge_id,
+        "challenge": challenge_b64,
+        "fingerprint": key.fingerprint,
+        "login": user.username,
+        "csrfToken": get_token(request),
+    })
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@ensure_csrf_cookie
+def auth_login_key(request):
+    """Автентифікація користувача за цифровим підписом одноразового виклику (Challenge-Response)."""
+    raw_login = str(request.data.get("login") or request.data.get("username") or "")
+    clean_login = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", "", raw_login).strip()
+    safe_log_username = clean_login[:30] if clean_login else "unknown"
+    login_val = clean_login.lower()[:64]
+
+    challenge_id = str(request.data.get("challenge_id") or "").strip()
+    signature_str = str(request.data.get("signature") or "").strip()
+
+    ok, ip_key, user_key, ip_att, user_att = _check_auth_rate_limit(request, login_val)
+    if not ok:
+        return Response(
+            {"detail": "Забагато спроб входу. Спробуйте пізніше."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    if not challenge_id or not signature_str:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба входу за ключем (відсутній виклик або підпис)", "korystuvach", safe_log_username)
+        return Response({"detail": "Відсутній виклик або підпис ключа."}, status=400)
+
+    # Захист від Replay-атаки: одноразове зчитування та негайне видалення з кешу
+    chal_key = f"auth_chal:{challenge_id}"
+    chal_data = cache.get(chal_key)
+    cache.delete(chal_key)
+
+    if not chal_data:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба входу за ключем (застарілий або повторний виклик)", "korystuvach", safe_log_username)
+        return Response({"detail": "Виклик застарів або вже використаний. Спробуйте знову."}, status=400)
+
+    user = User.objects.filter(id=chal_data["user_id"]).select_related("profile").first()
+    key = user.access_keys.filter(id=chal_data["key_id"], is_revoked=False).first() if user else None
+
+    if not user or not user.is_active or not key:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба входу за ключем (користувач неактивний або ключ відкликано)", "korystuvach", safe_log_username)
+        return Response({"detail": "Обліковий запис заблоковано або ключ відкликано."}, status=400)
+
+    try:
+        sig_bytes = base64.b64decode(signature_str)
+        challenge_bytes = base64.b64decode(chal_data["challenge"])
+    except Exception:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба входу за ключем (некоректне base64-кодування)", "korystuvach", safe_log_username, field="key_fingerprint", new=key.fingerprint)
+        return Response({"detail": "Недійсний формат підпису."}, status=400)
+
+    is_valid = verify_key_signature(key.public_key_pem, challenge_bytes, sig_bytes)
+    if not is_valid:
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, f"невдала спроба входу за ключем (недійсний підпис: {key.fingerprint[:16]}...)", "korystuvach", safe_log_username, field="key_fingerprint", new=key.fingerprint)
+        return Response({"detail": "Недійсний цифровий підпис ключа."}, status=400)
 
     if user_key:
         cache.delete(user_key)
-    token, _ = Token.objects.get_or_create(user=u)
-    AuditLog.write(u.profile, "вхід у систему", "korystuvach", u.profile.code)
+
+    token, _ = Token.objects.get_or_create(user=user)
+    AuditLog.write(
+        user.profile,
+        f"успішний вхід за ключем ({key.fingerprint[:16]}...)",
+        "korystuvach",
+        user.profile.code,
+        field="key_fingerprint",
+        new=key.fingerprint,
+    )
+
     return Response({
+        "ok": True,
         "token": token.key,
-        "profile": profile_dict(u.profile),
+        "profile": profile_dict(user.profile),
+        "key_fingerprint": key.fingerprint,
         "csrfToken": get_token(request),
     })
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@ensure_csrf_cookie
+def login(request):
+    """Класичний вхід за паролем повністю вимкнено згідно з вимогами безпеки."""
+    raw_username = str(request.data.get("username") or "")
+    clean_username = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", "", raw_username).strip()
+    safe_log_username = clean_username[:30] if clean_username else "unknown"
+
+    # Якщо клієнт випадково надіслав виклик/підпис на цей ендпоінт, перенаправляємо
+    if request.data.get("signature") and request.data.get("challenge_id"):
+        return auth_login_key(request)
+
+    AuditLog.write(None, "спроба застарілого входу за паролем (заблоковано)", "korystuvach", safe_log_username)
+    return Response(
+        {"detail": "Класичний вхід лише за паролем вимкнено. Скористайтеся авторизацією за файлом особистого ключа (.key)."},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
 
 
 @api_view(["POST"])
@@ -1986,6 +2136,120 @@ def user_update(request, code):
         Token.objects.create(user=x.user)
         AuditLog.write(p, "скинуто пароль", "korystuvach", x.code)
     return Response(profile_dict(x))
+
+
+@api_view(["GET"])
+def admin_keys(request):
+    """Список користувачів та стан їхніх ключів доступу (.key) для тех-адміністратора."""
+    require(request, TECH, "Керування ключами доступу веде технічний адміністратор.")
+    items = []
+    for p in Profile.objects.select_related("user", "unit").order_by("code"):
+        act = p.active_key
+        lat = p.latest_key
+        if act:
+            st = "active"
+            st_name = "Активний"
+            fp = act.fingerprint
+            issued_at = act.created_at.isoformat()
+        elif lat and lat.is_revoked:
+            st = "revoked"
+            st_name = "Відкликано"
+            fp = lat.fingerprint
+            issued_at = lat.created_at.isoformat()
+        else:
+            st = "none"
+            st_name = "Не випущено"
+            fp = None
+            issued_at = None
+
+        items.append({
+            "code": p.code,
+            "username": p.user.username,
+            "full_name": p.full_name,
+            "role": p.role,
+            "role_name": p.get_role_display(),
+            "unit": unit_dict(p.unit),
+            "position": p.position,
+            "is_active": p.user.is_active,
+            "status": st,
+            "status_name": st_name,
+            "fingerprint": fp,
+            "issued_at": issued_at,
+        })
+    return Response(items)
+
+
+@api_view(["POST"])
+def admin_key_register(request):
+    """Реєстрація публічного ключа, згенерованого в браузері адміністратора."""
+    admin_p = require(request, TECH, "Керування ключами доступу веде технічний адміністратор.")
+    user_code = str(request.data.get("user_code") or request.data.get("code") or "").strip().upper()
+    pub_pem = str(request.data.get("public_key_pem") or "").strip()
+
+    if not user_code or not pub_pem:
+        raise ValidationError({"detail": "Необхідно вказати код користувача та публічний ключ."})
+
+    target_profile = get_object_or_404(Profile, code=user_code)
+    target_user = target_profile.user
+
+    try:
+        calculated_fp = calculate_public_key_fingerprint(pub_pem)
+    except Exception as e:
+        raise ValidationError({"detail": f"Некоректний формат публічного ключа: {e}"})
+
+    with transaction.atomic():
+        target_user.access_keys.filter(is_revoked=False).update(
+            is_revoked=True,
+            revoked_at=timezone.now(),
+        )
+        new_key = UserAccessKey.objects.create(
+            user=target_user,
+            public_key_pem=pub_pem,
+            fingerprint=calculated_fp,
+        )
+        AuditLog.write(
+            admin_p,
+            "випуск ключа доступу (.key)",
+            "korystuvach",
+            target_profile.code,
+            field="key_fingerprint",
+            new=calculated_fp,
+        )
+
+    return Response({
+        "ok": True,
+        "fingerprint": calculated_fp,
+        "user_code": target_profile.code,
+        "created_at": new_key.created_at.isoformat(),
+    }, status=201)
+
+
+@api_view(["POST"])
+def admin_key_revoke(request, code):
+    """Відкликання активного ключа доступу користувача."""
+    admin_p = require(request, TECH, "Керування ключами доступу веде технічний адміністратор.")
+    target_profile = get_object_or_404(Profile, code=code.strip().upper())
+    target_user = target_profile.user
+
+    active_keys = target_user.access_keys.filter(is_revoked=False)
+    if not active_keys.exists():
+        raise ValidationError({"detail": "У користувача немає активного ключа для відкликання."})
+
+    first_fp = active_keys.first().fingerprint
+    with transaction.atomic():
+        active_keys.update(is_revoked=True, revoked_at=timezone.now())
+        AuditLog.write(
+            admin_p,
+            "відкликання ключа доступу (.key)",
+            "korystuvach",
+            target_profile.code,
+            field="key_fingerprint",
+            old=first_fp,
+            new="revoked",
+        )
+
+    return Response({"ok": True, "user_code": target_profile.code})
+
 
 
 @api_view(["GET"])
