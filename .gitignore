@@ -1,20 +1,33 @@
+# Змінні оточення та секрети
 .env
 .env.*
 !.env.example
 
-# IDE та системні файли
+# IDE, редактори та системні файли
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+*.bak
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Python / Django
 __pycache__/
 *.py[cod]
+*$py.class
 *.pyo
 .venv/
 venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
 backend/db.sqlite3
+backend/db.sqlite3-journal
 backend/staticfiles/
 backend/media/
 .cache/
@@ -22,13 +35,31 @@ backend/.cache/
 
 # Node / Frontend
 frontend/node_modules/
+node_modules/
 frontend/dist/
+dist/
 *.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Безпека: Приватні файлові ключі доступу (.key)
+# Docker локальні налаштування
+docker-compose.override.yml
+.docker/
+
+# Безпека: Приватні файлові ключі доступу (.key), сертифікати та локальні директорії ключів
 *.key
+*.pfx
+*.p12
 local_keys/
 keys/
 backend/local_keys/
 backend/keys/
 
+# Тимчасові та scratch-файли
+scratch/
+scratch_*
+*.tmp
+tmp/
+temp/
