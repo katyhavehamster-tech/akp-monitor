@@ -20,14 +20,18 @@ class SecurityHeadersMiddleware:
         "base-uri 'self'; "
         "form-action 'self'"
     )
+    # Air-Gapped Ready CSP для документації API (виключно локальні ресурси 'self' без зовнішніх CDN):
     DOCS_CSP = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' data: https://cdn.jsdelivr.net; "
-        "font-src 'self' data: https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
         "frame-ancestors 'none'; "
-        "base-uri 'self'"
+        "base-uri 'self'; "
+        "form-action 'self'"
     )
 
     # OWASP: HSTS з preload

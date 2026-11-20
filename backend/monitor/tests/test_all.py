@@ -349,6 +349,8 @@ class Security(Base):
 
         me_resp = admin_c.get("/api/auth/me")
         self.assertIn("Content-Security-Policy", me_resp)
+        self.assertNotIn("cdn.jsdelivr.net", me_resp["Content-Security-Policy"])
+        self.assertNotIn("https://", me_resp["Content-Security-Policy"])
         self.assertIn("Permissions-Policy", me_resp)
         self.assertIn("no-store", me_resp["Cache-Control"])
 
@@ -1080,6 +1082,31 @@ class OwaspSecurityTests(Base):
         self.assertFalse(Token.objects.filter(user=user).exists())
         r_after = c_user.get("/api/auth/me")
         self.assertEqual(r_after.status_code, 401)
+
+    def test_air_gapped_csp_and_local_docs(self):
+        """Перевірка 100% автономності (Air-Gapped Ready): відсутність cdn.jsdelivr.net та локалізація Swagger."""
+        c = APIClient()
+        # 1. Перевірка заголовка CSP для API / SPA
+        r_me = self.client_for("u-001").get("/api/auth/me")
+        csp_me = r_me.headers.get("Content-Security-Policy", "")
+        self.assertTrue(bool(csp_me))
+        self.assertNotIn("cdn.jsdelivr.net", csp_me)
+        self.assertNotIn("https://", csp_me)
+        self.assertIn("default-src 'self'", csp_me)
+
+        # 2. Перевірка заголовка CSP для документації API (/api/docs/)
+        r_docs = c.get("/api/docs/")
+        self.assertEqual(r_docs.status_code, 200)
+        csp_docs = r_docs.headers.get("Content-Security-Policy", "")
+        self.assertTrue(bool(csp_docs))
+        self.assertNotIn("cdn.jsdelivr.net", csp_docs)
+        self.assertNotIn("https://", csp_docs)
+        self.assertIn("default-src 'self'", csp_docs)
+
+        # 3. Перевірка тіла HTML документації: посилання на локальний sidecar замість CDN
+        html_docs = r_docs.content.decode("utf-8")
+        self.assertNotIn("cdn.jsdelivr.net", html_docs)
+        self.assertIn("/static/drf_spectacular_sidecar/swagger-ui-dist/", html_docs)
 
 
 

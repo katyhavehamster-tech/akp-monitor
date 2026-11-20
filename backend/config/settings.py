@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "drf_spectacular",
+    "drf_spectacular_sidecar",
     "corsheaders",
     "monitor",
 ]
@@ -162,6 +163,10 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API цифрової системи моніторингу виконання антикорупційної програми. "
                    "Призначене для інтеграції з інформаційними системами органу, МОУ та НАЗК.",
     "VERSION": "0.1.0",
+    # 100% автономність для роботи в закритому контурі (Air-Gapped Ready) без зовнішніх CDN:
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }
 
 CORS_ALLOWED_ORIGINS = [
