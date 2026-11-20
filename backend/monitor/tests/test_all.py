@@ -743,7 +743,7 @@ class OwaspSecurityTests(Base):
         self.assertEqual(r1.json()["detail"], "Користувача не знайдено або відсутній активний ключ доступу.")
 
         # 2. Rate limiting: не більше 10 спроб на хвилину
-        for _ in range(8):
+        for _ in range(10):
             client.post("/api/auth/challenge", {"login": "rate_test_user"}, format="json")
         r_throttle = client.post("/api/auth/challenge", {"login": "rate_test_user"}, format="json")
         self.assertEqual(r_throttle.status_code, 429)
@@ -986,6 +986,7 @@ class OwaspSecurityTests(Base):
 
         # 6. Перевірка команди generate_local_keys
         import tempfile
+        from pathlib import Path
         with tempfile.TemporaryDirectory() as tmp_dir:
             call_command("generate_local_keys", "--password", "test_pw", "--output", tmp_dir, "--user", "u-001")
             key_files = list(Path(tmp_dir).glob("*.key"))
