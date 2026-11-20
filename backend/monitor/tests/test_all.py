@@ -1,6 +1,7 @@
 """Тести: python manage.py test monitor"""
 from datetime import date, timedelta
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
