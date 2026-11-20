@@ -10,7 +10,7 @@
 import base64
 import hashlib
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -30,7 +30,7 @@ def calculate_public_key_fingerprint(public_key_pem: str) -> str:
     return hashlib.sha256(spki_der).hexdigest()
 
 
-def generate_key_file(user_login: str, role: str, password: str, iterations: int = 100000) -> dict:
+def generate_key_file(user_login: str, role: str, password: str, iterations: int = 100000, expires_in_days: int = 365) -> dict:
     """Генерує пару ключів ECDSA P-256 та формує зашифрований контейнер AKP-KEY-V1."""
     priv = ec.generate_private_key(ec.SECP256R1())
     pub = priv.public_key()
@@ -65,12 +65,16 @@ def generate_key_file(user_login: str, role: str, password: str, iterations: int
     aesgcm = AESGCM(key)
     ciphertext = aesgcm.encrypt(iv, pkcs8_der, None)
 
+    now_dt = datetime.now(timezone.utc)
+    exp_dt = now_dt + timedelta(days=expires_in_days)
+
     return {
         "format": "AKP-KEY-V1",
         "user_login": user_login,
         "role": role,
         "fingerprint": fingerprint,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now_dt.isoformat(),
+        "expires_at": exp_dt.isoformat(),
         "crypto": {
             "kdf": "PBKDF2",
             "hash": "SHA-256",

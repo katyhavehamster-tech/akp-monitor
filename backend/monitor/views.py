@@ -480,6 +480,11 @@ def auth_challenge(request):
         AuditLog.write(None, "невдала спроба отримання виклику (немає активного ключа)", "korystuvach", safe_log_username, field="key_fingerprint", new=safe_fp)
         return Response({"detail": "Користувача не знайдено або відсутній активний ключ доступу."}, status=400)
 
+    if key.expires_at and key.expires_at < timezone.now():
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, "невдала спроба отримання виклику (термін дії ключа закінчився)", "korystuvach", safe_log_username, field="key_fingerprint", new=safe_fp)
+        return Response({"detail": "Термін дії особистого ключа закінчився. Зверніться до адміністратора для його перевипуску."}, status=401)
+
     challenge_raw = secrets.token_bytes(32)
     challenge_b64 = base64.b64encode(challenge_raw).decode("ascii")
     challenge_id = uuid.uuid4().hex
@@ -548,6 +553,11 @@ def auth_login_key(request):
         _bump_auth_rate(ip_key, user_key, ip_att, user_att)
         AuditLog.write(None, "невдала спроба входу за ключем (користувач неактивний або ключ відкликано)", "korystuvach", safe_log_username)
         return Response({"detail": "Обліковий запис заблоковано або ключ відкликано."}, status=400)
+
+    if key.expires_at and key.expires_at < timezone.now():
+        _bump_auth_rate(ip_key, user_key, ip_att, user_att)
+        AuditLog.write(None, f"невдала спроба входу за ключем (термін дії ключа закінчився: {key.fingerprint[:16]}...)", "korystuvach", safe_log_username, field="key_fingerprint", new=key.fingerprint)
+        return Response({"detail": "Термін дії особистого ключа закінчився. Зверніться до адміністратора для його перевипуску."}, status=401)
 
     try:
         sig_bytes = base64.b64decode(signature_str)
@@ -709,6 +719,17 @@ def me(request):
 def auth_heartbeat(request):
     """Легкий фоновий запит перевірки валідності сесії та активності кожні 5 секунд."""
     p = profile(request)
+    if not request.user.is_active:
+        return Response({"detail": "Обліковий запис заблоковано."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    token_key = getattr(getattr(request, "auth", None), "key", None)
+    sess = UserSession.objects.filter(token_key=token_key).first() if token_key else None
+    if sess and sess.key_fingerprint:
+        k = UserAccessKey.objects.filter(user=request.user, fingerprint=sess.key_fingerprint, is_revoked=False).first()
+        if not k or (k.expires_at and k.expires_at < timezone.now()):
+            sess.delete()
+            return Response({"detail": "Термін дії особистого ключа закінчився або ключ відкликано."}, status=status.HTTP_401_UNAUTHORIZED)
+
     _touch_session(request, request.user)
     return Response({
         "ok": True,
@@ -874,9 +895,9 @@ def period_update(request, code):
 
 @api_view(["GET", "PATCH"])
 def system_settings(request):
+    p = require(request, TECH, "Налаштування доступні виключно технічному адміністратору.")
     s = SystemSettings.get()
     if request.method == "PATCH":
-        p = require(request, TECH, "Налаштування змінює технічний адміністратор.")
         limits = {
             "window_days": (1, 60),
             "reminder_days": (1, 180),
@@ -1360,9 +1381,9 @@ def evidence_file(request, code):
     if not safe_fname or safe_fname.startswith('.'):
         safe_fname = f"evidence_{e.code}{Path(raw_fname).suffix}"
 
-    is_anal = bool(p and p.role == Role.ANAL)
+    is_audit = bool(p and p.role in (Role.AUDIT, "ANAL"))
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-    if SystemSettings.is_izod_active() or is_anal:
+    if SystemSettings.is_izod_active() or is_audit:
         AuditLog.write(
             p,
             "завантаження підтвердного документа",
@@ -1373,15 +1394,15 @@ def evidence_file(request, code):
             new=f"Файл: {safe_fname} (захід {e.measure.code}, SHA-256: {e.sha256[:12]}…)",
         )
 
-    # Якщо завантажує ANAL і файл є документом Word (.docx) — вбудовуємо персоналізований цифровий слід
-    if is_anal and safe_fname.lower().endswith(".docx"):
+    # Якщо завантажує AUDIT і файл є документом Word (.docx) — вбудовуємо персоналізований цифровий слід
+    if is_audit and safe_fname.lower().endswith(".docx"):
         try:
             from docx import Document
             from . import docgen as D
             raw_data = fh.read()
             fh.close()
             doc = Document(io.BytesIO(raw_data))
-            D.apply_analyst_watermark(doc, p)
+            D.apply_watermark_and_protection(doc, p)
             out_buf = io.BytesIO()
             doc.save(out_buf)
             resp = HttpResponse(
@@ -1391,8 +1412,8 @@ def evidence_file(request, code):
             resp["Content-Disposition"] = f'attachment; filename="{safe_fname}"'
             resp["X-Content-Type-Options"] = "nosniff"
             resp["Content-Security-Policy"] = "default-src 'none'; sandbox"
-            resp["X-Digital-Footprint"] = f"ANAL · {p.code} · {now_str}"
-            resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {p.code} · {now_str}"
+            resp["X-Digital-Footprint"] = f"AUDIT · {p.code} · {now_str}"
+            resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · AUDIT · {p.code} · {now_str}"
             return resp
         except Exception:
             fh = e.file.open("rb")
@@ -1401,9 +1422,9 @@ def evidence_file(request, code):
     resp["Content-Disposition"] = f'attachment; filename="{safe_fname}"'
     resp["X-Content-Type-Options"] = "nosniff"
     resp["Content-Security-Policy"] = "default-src 'none'; sandbox"
-    if is_anal:
-        resp["X-Digital-Footprint"] = f"ANAL · {p.code} · {now_str}"
-        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {p.code} · {now_str}"
+    if is_audit:
+        resp["X-Digital-Footprint"] = f"AUDIT · {p.code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · AUDIT · {p.code} · {now_str}"
     return resp
 
 
@@ -1411,7 +1432,7 @@ def evidence_file(request, code):
 def comment_add(request, code):
     p = profile(request)
     m = get_object_or_404(Measure, code=code)
-    if not can_see_measure(p, m) or p.role in (Role.KER, Role.ANAL):
+    if not can_see_measure(p, m) or p.role in (Role.KER, Role.AUDIT, "ANAL"):
         raise PermissionDenied("Коментувати можуть виконавець заходу, уповноважений та адміністратор.")
     text = (request.data.get("text") or "").strip()
     if not text:
@@ -1607,10 +1628,10 @@ def _xlsx_response(filename, sheets, user_profile=None):
     wb = Workbook()
     wb.remove(wb.active)
     head_fill = PatternFill("solid", fgColor="0B2A5B")
-    is_anal = bool(user_profile and getattr(user_profile, "role", None) == Role.ANAL)
+    is_audit = bool(user_profile and getattr(user_profile, "role", None) in (Role.AUDIT, "ANAL"))
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     u_code = getattr(user_profile, "code", "SYS")
-    u_role = getattr(user_profile, "role", "ANAL")
+    u_role = getattr(user_profile, "role", "AUDIT")
     h = hashlib.sha256(f"{u_code}:{u_role}:{now_str}:{filename}".encode()).hexdigest()[:12]
     stamp = f"ІзОД / ДСК · {u_code} · {u_role} · {now_str} · SHA-256: {h}"
 
@@ -1654,37 +1675,37 @@ def _xlsx_response(filename, sheets, user_profile=None):
     resp = HttpResponse(buf.getvalue(),
                         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    if is_anal:
-        resp["X-Digital-Footprint"] = f"ANAL · {u_code} · {now_str}"
-        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {u_code} · {now_str}"
+    if is_audit:
+        resp["X-Digital-Footprint"] = f"AUDIT · {u_code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · AUDIT · {u_code} · {now_str}"
     return resp
 
 
 def _docx_response(filename, content: bytes, user_profile=None):
     resp = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    if user_profile and getattr(user_profile, "role", None) == Role.ANAL:
+    if user_profile and getattr(user_profile, "role", None) in (Role.AUDIT, "ANAL"):
         now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-        resp["X-Digital-Footprint"] = f"ANAL · {user_profile.code} · {now_str}"
-        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {user_profile.code} · {now_str}"
+        resp["X-Digital-Footprint"] = f"AUDIT · {user_profile.code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · AUDIT · {user_profile.code} · {now_str}"
     return resp
 
 
 def _csv_response(filename, header, data, user_profile=None):
     buf = io.StringIO()
     w = csv.writer(buf)
-    is_anal = bool(user_profile and getattr(user_profile, "role", None) == Role.ANAL)
-    if is_anal:
+    is_audit = bool(user_profile and getattr(user_profile, "role", None) in (Role.AUDIT, "ANAL"))
+    if is_audit:
         now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-        w.writerow([f"# ANAL · {user_profile.code} · {now_str} · ІзОД / ДСК"])
+        w.writerow([f"# AUDIT · {user_profile.code} · {now_str} · ІзОД / ДСК"])
     w.writerow([_sanitize_export_cell(h) for h in header])
     w.writerows([[_sanitize_export_cell(v) for v in row] for row in data])
     resp = HttpResponse("\ufeff" + buf.getvalue(), content_type="text/csv; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    if is_anal:
+    if is_audit:
         now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-        resp["X-Digital-Footprint"] = f"ANAL · {user_profile.code} · {now_str}"
-        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {user_profile.code} · {now_str}"
+        resp["X-Digital-Footprint"] = f"AUDIT · {user_profile.code} · {now_str}"
+        resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · AUDIT · {user_profile.code} · {now_str}"
     return resp
 
 
@@ -2127,10 +2148,10 @@ def survey_compare(request):
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         resp["Content-Disposition"] = f'attachment; filename="porivniannia_opytuvan_{a.id}_vs_{b.id}.xlsx"'
-        if p and p.role == Role.ANAL:
+        if p and p.role in (Role.AUDIT, "ANAL"):
             now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-            resp["X-Digital-Footprint"] = f"ANAL · {p.code} · {now_str}"
-            resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · ANAL · {p.code} · {now_str}"
+            resp["X-Digital-Footprint"] = f"AUDIT · {p.code} · {now_str}"
+            resp["X-IzOD-Watermark"] = f"ІзОД / ДСК · AUDIT · {p.code} · {now_str}"
         return resp
 
     if fmt == "docx":
@@ -2183,10 +2204,18 @@ def users(request):
             kd = get_or_create_test_key_container(code.lower(), d["role"], raw_pw)
             pub_pem = kd["crypto"]["public_key"]
             fp = kd["fingerprint"]
+        try:
+            exp_days = int(d.get("expires_in_days") or 365)
+        except (ValueError, TypeError):
+            exp_days = 365
+        if exp_days not in (90, 180, 365):
+            exp_days = 365
+        exp_date = timezone.now() + timedelta(days=exp_days)
         UserAccessKey.objects.create(
             user=u,
             public_key_pem=pub_pem,
             fingerprint=fp,
+            expires_at=exp_date,
         )
         AuditLog.write(p, "створено обліковий запис", "korystuvach", code, "role", "", d["role"])
         return Response(profile_dict(np), status=201)
@@ -2200,6 +2229,10 @@ def user_update(request, code):
     if request.method == "DELETE":
         if x.code == p.code:
             raise ValidationError({"detail": "Не можна видалити власний обліковий запис."})
+        if x.role == Role.ADMIN:
+            other_admins = Profile.objects.filter(role=Role.ADMIN, user__is_active=True).exclude(code=x.code).count()
+            if other_admins == 0:
+                raise ValidationError({"detail": "Неможливо видалити останнього активного адміністратора системи."})
         u = x.user
         c_code = x.code
         from django.db.models.deletion import ProtectedError
@@ -2216,6 +2249,10 @@ def user_update(request, code):
     if "role" in d and d["role"] != x.role:
         if d["role"] not in dict(Role.choices):
             raise ValidationError({"role": "Невідома роль."})
+        if x.role == Role.ADMIN and d["role"] != Role.ADMIN:
+            other_admins = Profile.objects.filter(role=Role.ADMIN, user__is_active=True).exclude(code=x.code).count()
+            if other_admins == 0:
+                raise ValidationError({"detail": "Неможливо зняти роль з останнього активного адміністратора системи."})
         if x.code == p.code and d["role"] != Role.ADMIN:
             raise ValidationError({"role": "Не можна зняти роль адміністратора з власного облікового запису."})
         target_unit = Unit.objects.filter(code=d["unit"]).first() if "unit" in d else x.unit
@@ -2238,6 +2275,10 @@ def user_update(request, code):
         new_active = bool(d["is_active"])
         if x.code == p.code and not new_active:
             raise ValidationError({"is_active": "Не можна заблокувати власний обліковий запис."})
+        if x.role == Role.ADMIN and not new_active:
+            other_admins = Profile.objects.filter(role=Role.ADMIN, user__is_active=True).exclude(code=x.code).count()
+            if other_admins == 0:
+                raise ValidationError({"detail": "Неможливо заблокувати останнього активного адміністратора системи."})
         if x.user.is_active != new_active:
             x.user.is_active = new_active
             x.user.save()
@@ -2261,19 +2302,35 @@ def admin_keys(request):
     """Список користувачів та стан їхніх ключів доступу (.key) для тех-адміністратора."""
     require(request, TECH, "Керування ключами доступу веде технічний адміністратор.")
     items = []
+    now = timezone.now()
     for p in Profile.objects.select_related("user", "unit").order_by("code"):
         act = p.active_key
         lat = p.latest_key
+        expires_at = None
+        is_expired = False
+        days_left = None
         if act:
-            st = "active"
-            st_name = "Активний"
             fp = act.fingerprint
             issued_at = act.created_at.isoformat()
+            if act.expires_at:
+                expires_at = act.expires_at.isoformat()
+                is_expired = act.is_expired
+                days_left = (act.expires_at - now).days
+            if is_expired:
+                st = "expired"
+                st_name = "Прострочено"
+            else:
+                st = "active"
+                st_name = "Активний"
         elif lat and lat.is_revoked:
             st = "revoked"
             st_name = "Відкликано"
             fp = lat.fingerprint
             issued_at = lat.created_at.isoformat()
+            if lat.expires_at:
+                expires_at = lat.expires_at.isoformat()
+                is_expired = lat.is_expired
+                days_left = (lat.expires_at - now).days
         else:
             st = "none"
             st_name = "Не випущено"
@@ -2293,6 +2350,9 @@ def admin_keys(request):
             "status_name": st_name,
             "fingerprint": fp,
             "issued_at": issued_at,
+            "expires_at": expires_at,
+            "is_expired": is_expired,
+            "days_left": days_left,
         })
     return Response(items)
 
@@ -2338,6 +2398,14 @@ def admin_key_register(request):
     except Exception as e:
         raise ValidationError({"detail": f"Некоректний формат публічного ключа: {e}"})
 
+    try:
+        exp_days = int(request.data.get("expires_in_days") or 365)
+    except (ValueError, TypeError):
+        exp_days = 365
+    if exp_days not in (90, 180, 365):
+        exp_days = 365
+    exp_date = timezone.now() + timedelta(days=exp_days)
+
     with transaction.atomic():
         target_user.access_keys.filter(is_revoked=False).update(
             is_revoked=True,
@@ -2347,6 +2415,7 @@ def admin_key_register(request):
             user=target_user,
             public_key_pem=pub_pem,
             fingerprint=calculated_fp,
+            expires_at=exp_date,
         )
         # Негайне анулювання активних сесій та токенів користувача при перевипуску ключа
         _flush_user_sessions(target_user)
@@ -2364,6 +2433,7 @@ def admin_key_register(request):
         "fingerprint": calculated_fp,
         "user_code": target_profile.code,
         "created_at": new_key.created_at.isoformat(),
+        "expires_at": new_key.expires_at.isoformat() if new_key.expires_at else None,
     }, status=201)
 
 
@@ -2373,6 +2443,16 @@ def admin_key_revoke(request, code):
     admin_p = require(request, TECH, "Керування ключами доступу веде технічний адміністратор.")
     target_profile = get_object_or_404(Profile, code=code.strip().upper())
     target_user = target_profile.user
+
+    # Захист останнього активного ключа адміністратора системи
+    if target_profile.role == Role.ADMIN:
+        other_admins_with_key = Profile.objects.filter(
+            role=Role.ADMIN,
+            user__is_active=True,
+            user__access_keys__is_revoked=False,
+        ).exclude(code=target_profile.code).distinct().count()
+        if other_admins_with_key == 0:
+            raise ValidationError({"detail": "Неможливо відкликати останній активний ключ адміністратора: у системі має залишатися щонайменше один адміністратор з діючим ключем."})
 
     active_keys = target_user.access_keys.filter(is_revoked=False)
     if not active_keys.exists():
@@ -2536,7 +2616,7 @@ def admin_session_terminate_user(request, code):
 
 @api_view(["GET"])
 def system_health(request):
-    require(request, TECH | {Role.KOORD}, "Стан системи бачать техадміністратор і уповноважений.")
+    require(request, TECH, "Стан системи доступний виключно технічному адміністратору.")
     from django.db import connection
     ev_files = Evidence.objects.exclude(file="")
     bad = [e.code for e in ev_files if e.verify() is False]

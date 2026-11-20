@@ -21,14 +21,13 @@ function Portal() {
   const [half, setHalf] = useState(1)
   const [printForm, setPrintForm] = useState(false)
   const { data, error } = useApi<Any>(`reports/portal?year=${year}&half=${half}`, [year, half])
-  const sys = useApi<Any>('settings')
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
   const flagged = data.rows.filter((r: Any) => r.sluzhbove_sygnaly_pered_perenesenniam).length
   const counts: Record<string, number> = {}
   data.rows.forEach((r: Any) => { counts[r.stan_vykonannia] = (counts[r.stan_vykonannia] || 0) + 1 })
-  const rawSig1 = data.signatory_name || sys.data?.signatory_name
-  const rawSig2 = data.head_signatory_name || sys.data?.head_signatory_name
+  const rawSig1 = data.signatory_name
+  const rawSig2 = data.head_signatory_name
   const sig1 = (rawSig1 && rawSig1 !== 'Власне імʼя ПРІЗВИЩЕ') ? rawSig1 : 'Олександр КОВАЛЕНКО'
   const sig2 = (rawSig2 && rawSig2 !== 'Власне імʼя ПРІЗВИЩЕ') ? rawSig2 : 'Валерій СОКОЛОВ'
 
@@ -125,10 +124,9 @@ function Portal() {
 function Note() {
   const { period } = useAuth()
   const { data, error } = useApi<Any>(period ? `reports/note?period=${period}` : null, [period])
-  const sys = useApi<Any>('settings')
   if (error) return <ErrorBox msg={error} />
   if (!data) return <Loading />
-  const rawSig1 = data.signatory_name || sys.data?.signatory_name
+  const rawSig1 = data.signatory_name
   const sig1 = (rawSig1 && rawSig1 !== 'Власне імʼя ПРІЗВИЩЕ') ? rawSig1 : 'Олександр КОВАЛЕНКО'
   return <Card actions={<span className="no-print row">
     <button className="btn gold" onClick={() => download(`reports/note?period=${period}&format=docx`, `analitychna_dovidka_${period}.docx`)}>Завантажити Word (ДСТУ 4163:2020)</button>

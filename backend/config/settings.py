@@ -163,6 +163,7 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API цифрової системи моніторингу виконання антикорупційної програми. "
                    "Призначене для інтеграції з інформаційними системами органу, МОУ та НАЗК.",
     "VERSION": "0.1.0",
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAuthenticated"],
     # 100% автономність для роботи в закритому контурі (Air-Gapped Ready) без зовнішніх CDN:
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",

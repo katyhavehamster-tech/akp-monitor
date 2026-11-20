@@ -18,13 +18,13 @@ export function Watermark() {
     return () => clearInterval(timer)
   }, [])
 
-  // 1. Водяний знак відображається виключно для ролі «Аналітик» (ANAL)
-  if (!profile || profile.role !== 'ANAL') return null
+  // 1. Водяний знак відображається виключно для ролі «Внутрішній аудитор» (AUDIT)
+  if (!profile || profile.role !== 'AUDIT') return null
 
   // 2. Екранний водяний знак залишається ТІЛЬКИ на сторінці «Опитування» (/surveys)
   if (!loc.pathname.startsWith('/surveys')) return null
 
-  const text = `ІзОД / ДСК · ${profile.code} · ANAL · ${time}`
+  const text = `ІзОД / ДСК · ${profile.code} · AUDIT · ${time}`
 
   return (
     <div className="watermark-overlay" aria-hidden="true">

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { api, ensureCsrf, getToken, setToken, type Any } from './api'
 import { decryptAndSignChallenge, type KeyFileContainer } from './keyFileCrypto'
 
-export type Role = 'KOORD' | 'ADMIN' | 'KER' | 'VYK' | 'ANAL'
+export type Role = 'KOORD' | 'ADMIN' | 'KER' | 'VYK' | 'AUDIT'
 export interface Profile { code: string; role: Role; role_name: string; unit: { code: string; name: string } | null; position: string }
 
 interface Ctx {
@@ -154,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export const can = {
   edit: (r?: Role) => r === 'KOORD' || r === 'ADMIN',
   manageMeasures: (r?: Role) => r === 'KOORD' || r === 'ADMIN',
-  surveys: (r?: Role) => r === 'KOORD' || r === 'ADMIN' || r === 'ANAL',
+  surveys: (r?: Role) => r === 'KOORD' || r === 'ADMIN' || r === 'AUDIT',
   surveysEdit: (r?: Role) => r === 'KOORD' || r === 'ADMIN',
   tech: (r?: Role) => r === 'ADMIN',
   viewAll: (r?: Role) => !!r && r !== 'VYK',

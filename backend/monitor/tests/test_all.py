@@ -164,7 +164,7 @@ class Surveys(Base):
         import openpyxl
         from docx import Document
 
-        p = Profile.objects.filter(role=Role.ANAL).first()
+        p = Profile.objects.filter(role=Role.AUDIT).first()
         res = {
             "a": {"id": 1, "title": "Хвиля 2025"},
             "b": {"id": 2, "title": "Хвиля 2026"},
@@ -193,7 +193,7 @@ class Surveys(Base):
         ws2 = wb["Розподіл відповідей"]
         self.assertTrue(ws1.protection.sheet)
         self.assertTrue(ws2.protection.sheet)
-        self.assertIn("ANAL", ws1.oddHeader.right.text)
+        self.assertIn("AUDIT", ws1.oddHeader.right.text)
 
         # DOCX
         raw_docx = survey_docx(res, p)
@@ -632,29 +632,29 @@ class ReportVerification(Base):
         self.assertTrue(AuditLog.verify_chain()["ok"])
 
     def test_analyst_watermark_and_footprint(self):
-        """Перевірка персоналізованого сліду для ролі ANAL та його відсутності для інших ролей."""
+        """Перевірка персоналізованого сліду для ролі AUDIT та його відсутності для інших ролей."""
         c_anal = self.client_for("u-005")
         c_koord = self.client_for("u-002")
 
-        # 1. Експорт звіту аналітиком ANAL містить персоналізований цифровий слід
+        # 1. Експорт звіту аудитором AUDIT містить персоналізований цифровий слід
         r_anal_xlsx = c_anal.get("/api/reports/portal?year=2026&half=1&format=xlsx")
         self.assertEqual(r_anal_xlsx.status_code, 200)
         self.assertIn("X-Digital-Footprint", r_anal_xlsx.headers)
-        self.assertTrue(r_anal_xlsx.headers["X-Digital-Footprint"].startswith("ANAL · U-005"))
+        self.assertTrue(r_anal_xlsx.headers["X-Digital-Footprint"].startswith("AUDIT · U-005"))
 
         r_anal_docx = c_anal.get("/api/reports/portal?year=2026&half=1&format=docx")
         self.assertEqual(r_anal_docx.status_code, 200)
         self.assertIn("X-Digital-Footprint", r_anal_docx.headers)
-        self.assertTrue(r_anal_docx.headers["X-Digital-Footprint"].startswith("ANAL · U-005"))
+        self.assertTrue(r_anal_docx.headers["X-Digital-Footprint"].startswith("AUDIT · U-005"))
 
-        # Перевірка наявності колонтитула в самому Word-документі аналітика
+        # Перевірка наявності колонтитула в самому Word-документі аудитора
         import io
         from docx import Document
         doc = Document(io.BytesIO(r_anal_docx.content))
         foot_texts = [p.text for s in doc.sections for p in s.footer.paragraphs]
-        self.assertTrue(any("ANAL · U-005" in t for t in foot_texts))
+        self.assertTrue(any("AUDIT · U-005" in t for t in foot_texts))
 
-        # 2. Експорт уповноваженим KOORD НЕ містить цифрового сліду ANAL
+        # 2. Експорт уповноваженим KOORD НЕ містить цифрового сліду AUDIT
         r_koord_xlsx = c_koord.get("/api/reports/portal?year=2026&half=1&format=xlsx")
         self.assertEqual(r_koord_xlsx.status_code, 200)
         self.assertNotIn("X-Digital-Footprint", r_koord_xlsx.headers)
@@ -1162,6 +1162,63 @@ class OwaspSecurityTests(Base):
         self.assertEqual(r_hb.status_code, 200)
         self.assertTrue(r_hb.json()["ok"])
         self.assertTrue(r_hb.json()["is_active"])
+
+    def test_expired_key_rejection(self):
+        """Перевірка блокування прострочених ключів (TTL)."""
+        u = User.objects.get(username="u-006")
+        key = u.access_keys.filter(is_revoked=False).first()
+        key.expires_at = timezone.now() - timedelta(days=1)
+        key.save()
+
+        # 1. Запит виклику повертає 401
+        c = APIClient()
+        r_chal = c.post("/api/auth/challenge", {"login": "u-006", "fingerprint": key.fingerprint}, format="json")
+        self.assertEqual(r_chal.status_code, 401)
+        self.assertIn("закінчився", r_chal.json().get("detail", ""))
+
+        # 2. Будь-який автентифікований запит повертає 401 через перевірку в profile()
+        c_auth = self.client_for("u-006")
+        r_me = c_auth.get("/api/me")
+        self.assertEqual(r_me.status_code, 401)
+
+    def test_last_admin_protection(self):
+        """Захист останнього адміністратора від блокування, деактивації та відкликання ключа."""
+        admin_c = self.client_for("u-001")
+
+        # 1. Спроба заблокувати єдиного адміна u-001 повертає 400
+        r_block = admin_c.patch("/api/users/U-001", {"is_active": False}, format="json")
+        self.assertEqual(r_block.status_code, 400)
+
+        # 2. Спроба зняти роль з єдиного адміна повертає 400
+        r_role = admin_c.patch("/api/users/U-001", {"role": "KOORD"}, format="json")
+        self.assertEqual(r_role.status_code, 400)
+
+        # 3. Спроба відкликати останній ключ адміна повертає 400
+        r_rev = admin_c.post("/api/admin/keys/revoke/U-001")
+        self.assertEqual(r_rev.status_code, 400)
+
+    def test_system_endpoints_admin_only(self):
+        """Перевірка обмеження /api/system/health та /api/settings лише для ADMIN."""
+        c_koord = self.client_for("u-002")
+        self.assertEqual(c_koord.get("/api/system/health").status_code, 403)
+        self.assertEqual(c_koord.get("/api/settings").status_code, 403)
+
+        c_admin = self.client_for("u-001")
+        self.assertEqual(c_admin.get("/api/system/health").status_code, 200)
+        self.assertEqual(c_admin.get("/api/settings").status_code, 200)
+
+    def test_api_docs_require_authentication(self):
+        """Перевірка закриття /api/docs/ та /api/schema/ від анонімного доступу."""
+        anon = APIClient()
+        r_docs = anon.get("/api/docs/")
+        self.assertIn(r_docs.status_code, (401, 403))
+        r_schema = anon.get("/api/schema/")
+        self.assertIn(r_schema.status_code, (401, 403))
+
+        auth_c = self.client_for("u-001")
+        self.assertEqual(auth_c.get("/api/docs/").status_code, 200)
+        self.assertEqual(auth_c.get("/api/schema/").status_code, 200)
+
 
 
 

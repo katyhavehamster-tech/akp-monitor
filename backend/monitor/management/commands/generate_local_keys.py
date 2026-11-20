@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
@@ -66,6 +67,7 @@ class Command(BaseCommand):
                 user=p.user,
                 public_key_pem=key_data["crypto"]["public_key"],
                 fingerprint=key_data["fingerprint"],
+                expires_at=timezone.now() + timedelta(days=365),
             )
 
             # Записуємо локальний файл ключа

@@ -54,8 +54,8 @@ export function useTheme() {
 
 type Icon = ComponentType<{ size?: number; strokeWidth?: number }>
 type Item = [string, string, Role[], Icon]
-const ALL: Role[] = ['KOORD', 'ADMIN', 'KER', 'VYK', 'ANAL']
-const VIEW: Role[] = ['KOORD', 'ADMIN', 'KER', 'ANAL']
+const ALL: Role[] = ['KOORD', 'ADMIN', 'KER', 'VYK', 'AUDIT']
+const VIEW: Role[] = ['KOORD', 'ADMIN', 'KER', 'AUDIT']
 
 const GROUPS: { label: string; items: Item[] }[] = [
   { label: 'Мій кабінет', items: [
@@ -75,7 +75,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     ['/program/passport', 'Паспорт програми', VIEW, BookOpen],
   ] },
   { label: 'Дослідження', items: [
-    ['/surveys', 'Опитування', ['KOORD', 'ADMIN', 'ANAL'], MessageSquareText],
+    ['/surveys', 'Опитування', ['KOORD', 'ADMIN', 'AUDIT'], MessageSquareText],
   ] },
   { label: 'Адміністрування', items: [
     ['/admin/users', 'Користувачі', ['ADMIN'], Users],
@@ -87,7 +87,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
 
 const CABINET: Record<Role, string> = {
   KOORD: 'Кабінет уповноваженого', VYK: 'Кабінет виконавця', ADMIN: 'Кабінет техадміністратора',
-  KER: 'Кабінет керівника', ANAL: 'Кабінет аналітика',
+  KER: 'Кабінет керівника', AUDIT: 'Кабінет внутрішнього аудитора',
 }
 
 export default function Layout() {

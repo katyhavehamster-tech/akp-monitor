@@ -26,7 +26,8 @@ class Role(models.TextChoices):
     ADMIN = "ADMIN", "Технічний адміністратор"
     KER = "KER", "Керівник"
     VYK = "VYK", "Виконавець"
-    ANAL = "ANAL", "Аналітик"
+    AUDIT = "AUDIT", "Внутрішній аудитор"
+    ANAL = "ANAL", "Внутрішній аудитор (застарілий код)"
 
 
 class Organ(models.Model):
@@ -71,6 +72,10 @@ class Profile(models.Model):
         return self.user.access_keys.order_by("-created_at").first()
 
 
+def default_key_expiration():
+    return timezone.now() + timedelta(days=365)
+
+
 class UserAccessKey(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="access_keys")
     public_key_pem = models.TextField("Публічний ключ (PEM)")
@@ -78,14 +83,24 @@ class UserAccessKey(models.Model):
     is_revoked = models.BooleanField("Відкликано", default=False)
     created_at = models.DateTimeField("Дата випуску", default=timezone.now)
     revoked_at = models.DateTimeField("Дата відкликання", null=True, blank=True)
+    expires_at = models.DateTimeField("Дійсний до", default=default_key_expiration, null=True, blank=True)
 
     class Meta:
         verbose_name = "Ключ доступу"
         verbose_name_plural = "Ключі доступу"
         ordering = ["-created_at"]
 
+    @property
+    def is_expired(self):
+        return bool(self.expires_at and self.expires_at < timezone.now())
+
     def __str__(self):
-        status = "Відкликано" if self.is_revoked else "Активний"
+        if self.is_revoked:
+            status = "Відкликано"
+        elif self.is_expired:
+            status = "Прострочено"
+        else:
+            status = "Активний"
         return f"{self.user.username} [{self.fingerprint[:16]}...] ({status})"
 
 

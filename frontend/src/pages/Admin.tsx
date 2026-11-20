@@ -7,7 +7,7 @@ import { downloadKeyFile, generateKeyFile, type KeyFileContainer } from '../keyF
 
 
 const ROLES: [string, string][] = [['KOORD', 'Уповноважений (адміністратор програми)'], ['ADMIN', 'Технічний адміністратор'],
-  ['KER', 'Керівник'], ['VYK', 'Виконавець'], ['ANAL', 'Аналітик']]
+  ['KER', 'Керівник'], ['VYK', 'Виконавець'], ['AUDIT', 'Внутрішній аудитор']]
 
 export function AdminUsers() {
   const { profile, reloadMe } = useAuth()
@@ -15,6 +15,7 @@ export function AdminUsers() {
   const units = useApi<Any[]>('units')
   const sys = useApi<Any>('settings')
   const [f, setF] = useState<Any>({ role: 'VYK' })
+  const [ttlDays, setTtlDays] = useState(365)
   const [sig1, setSig1] = useState('')
   const [sig2, setSig2] = useState('')
   const [err, setErr] = useState('')
@@ -58,7 +59,7 @@ export function AdminUsers() {
     try {
       const username = code.toLowerCase()
       // 1. Генерація криптографічного ключа ECDSA P-256 безпосередньо у браузері
-      const { keyFile, filename } = await generateKeyFile(username, f.role || 'VYK', keyPassword)
+      const { keyFile, filename } = await generateKeyFile(username, f.role || 'VYK', keyPassword, ttlDays)
 
       // 2. Автоматичне завантаження згенерованого файлу ключа
       downloadKeyFile(keyFile, filename)
@@ -70,6 +71,7 @@ export function AdminUsers() {
           code,
           public_key_pem: keyFile.crypto.public_key,
           fingerprint: keyFile.fingerprint,
+          expires_in_days: ttlDays,
         },
       })
 
@@ -136,6 +138,13 @@ export function AdminUsers() {
         <label className="f">Підрозділ<select value={f.unit || ''} onChange={e => setF({ ...f, unit: e.target.value })}><option value="">—</option>
           {units.data?.map(u => <option key={u.code} value={u.code}>{u.code} {u.name}</option>)}</select></label>
         <label className="f">Посада<input value={f.position || ''} onChange={e => setF({ ...f, position: e.target.value })} placeholder="Головний спеціаліст" /></label>
+        <label className="f">Термін дії ключа
+          <select value={ttlDays} onChange={e => setTtlDays(Number(e.target.value))}>
+            <option value={365}>365 днів (1 рік — рекомендовано)</option>
+            <option value={180}>180 днів (6 місяців)</option>
+            <option value={90}>90 днів (1 квартал)</option>
+          </select>
+        </label>
         <div className="admin-create-pw span2-lg">
           <label className="f" style={{ flex: 1, marginBottom: 0 }}>Пароль захисту ключа (.key)
             <input type="password" value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} placeholder="demo" />
@@ -157,8 +166,12 @@ export function AdminUsers() {
         <td style={{ minWidth: 180 }}><small>{u.position}</small></td>
         <td className="nowrap">{u.is_active ? <Pill tone="ok">активний</Pill> : <Pill tone="grey">заблоковано</Pill>}</td>
         <td>
-          <div className="row" style={{ flexWrap: 'nowrap' }}>
-            <button type="button" className="btn secondary small" onClick={() => patch(u.code, { is_active: !u.is_active })}>{u.is_active ? 'Заблокувати' : 'Розблокувати'}</button>
+          <div className="row" style={{ flexWrap: 'nowrap', gap: '.4rem', alignItems: 'center' }}>
+            {profile?.code !== u.code ? (
+              <button type="button" className="btn secondary small" onClick={() => patch(u.code, { is_active: !u.is_active })}>{u.is_active ? 'Заблокувати' : 'Розблокувати'}</button>
+            ) : (
+              <span className="pill info" style={{ fontSize: '.76rem', fontWeight: 600 }}>Ви</span>
+            )}
             {pwFor === u.code
               ? <span className="row" style={{ flexWrap: 'nowrap' }}><input type="password" placeholder="новий пароль" value={pw} onChange={e => setPw(e.target.value)} style={{ width: 135, minWidth: 120 }} />
                 <button type="button" className="btn small" disabled={!pw} onClick={async () => { await patch(u.code, { password: pw }, 'пароль змінено.'); setPwFor(null); setPw('') }}>Зберегти</button>
@@ -352,7 +365,7 @@ export function AdminSystem() {
           <dt>Файли підтверджень</dt><dd>{h.data.counts.evidence_files} файлів; {h.data.evidence_integrity_failed.length ? <Pill tone="bad">змінено: {h.data.evidence_integrity_failed.join(', ')}</Pill> : <Pill tone="ok">контрольні суми збігаються</Pill>}</dd>
           {Object.entries(h.data.counts).map(([k, v]) => [<dt key={k}>{COUNT_NAMES[k] || k}</dt>, <dd key={k + 'v'}>{String(v)}</dd>])}
         </dl>
-        <p style={{ marginTop: '.8rem' }}><a href="/api/docs/" target="_blank" rel="noreferrer">Документація API (OpenAPI/Swagger)</a> · <a href="/django-admin/" target="_blank" rel="noreferrer">Адмін-панель Django</a></p>
+        <p style={{ marginTop: '.8rem' }}><a href="/api/docs/" target="_blank" rel="noreferrer">Документація API (OpenAPI/Swagger)</a></p>
       </Card>
     </div>
   </>
@@ -377,8 +390,10 @@ function parseDevice(ua: string): string {
 }
 
 export function AdminKeys() {
+  const { profile } = useAuth()
   const { data, error, reload } = useApi<Any[]>('admin/keys')
   const [tab, setTab] = useState<'keys' | 'sessions'>('keys')
+  const [keyTtl, setKeyTtl] = useState(365)
   const [sessionsData, setSessionsData] = useState<{ sessions: Any[]; total_count: number; online_count: number } | null>(null)
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [modalUser, setModalUser] = useState<Any | null>(null)
@@ -419,6 +434,7 @@ export function AdminKeys() {
     setModalUser(null)
     setGeneratedKey(null)
     setPassword('')
+    setKeyTtl(365)
     setErr('')
   }
 
@@ -434,7 +450,7 @@ export function AdminKeys() {
     setErr('')
     try {
       // 1. Локальна генерація пари ключів у браузері через Web Crypto API
-      const { keyFile, filename } = await generateKeyFile(modalUser.username, modalUser.role, pw)
+      const { keyFile, filename } = await generateKeyFile(modalUser.username, modalUser.role, pw, keyTtl)
 
       // 2. Автоматичне завантаження файлу .key на комп'ютер адміністратора
       downloadKeyFile(keyFile, filename)
@@ -445,6 +461,7 @@ export function AdminKeys() {
           user_code: modalUser.code,
           public_key_pem: keyFile.crypto.public_key,
           fingerprint: keyFile.fingerprint,
+          expires_in_days: keyTtl,
         },
       })
 
@@ -594,6 +611,7 @@ export function AdminKeys() {
                     <th>Стан ключа</th>
                     <th>SHA-256 відбиток</th>
                     <th>Дата випуску</th>
+                    <th>Дійсний до</th>
                     <th style={{ minWidth: 200 }}>Дії</th>
                   </tr>
                 </thead>
@@ -628,6 +646,23 @@ export function AdminKeys() {
                           <span className="muted">—</span>
                         )}
                       </td>
+                      <td className="nowrap">
+                        {u.expires_at ? (
+                          u.is_expired ? (
+                            <Pill tone="bad">Прострочено ({fmtDate(u.expires_at)})</Pill>
+                          ) : u.days_left !== undefined && u.days_left <= 14 ? (
+                            <div>
+                              <Pill tone="bad">Спливає ({u.days_left} дн.)</Pill>
+                              <br />
+                              <small className="muted">{fmtDate(u.expires_at)}</small>
+                            </div>
+                          ) : (
+                            <small>{fmtDate(u.expires_at)}</small>
+                          )
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                       <td>
                         <div className="row" style={{ flexWrap: 'nowrap', gap: '.4rem', alignItems: 'center' }}>
                           <button
@@ -638,13 +673,14 @@ export function AdminKeys() {
                               setModalUser(u)
                               setGeneratedKey(null)
                               setPassword('')
+                              setKeyTtl(365)
                               setErr('')
                             }}
                           >
                             {u.status === 'active' ? 'Перевипустити .key' : 'Випустити .key'}
                           </button>
 
-                          {u.status === 'active' && (
+                          {u.status === 'active' && profile?.code !== u.code && (
                             revokeFor === u.code ? (
                               <span className="row" style={{ flexWrap: 'nowrap', gap: '.3rem', alignItems: 'center' }}>
                                 <button
@@ -870,6 +906,12 @@ export function AdminKeys() {
                       <span className="muted" style={{ fontSize: '.84rem' }}>Користувач / Роль:</span>
                       <span><b>{generatedKey.user.code}</b> · <Pill tone="info">{generatedKey.user.role_name || generatedKey.user.role}</Pill></span>
                     </div>
+                    {generatedKey.keyFile.expires_at && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="muted" style={{ fontSize: '.84rem' }}>Дійсний до:</span>
+                        <span><b>{fmtDate(generatedKey.keyFile.expires_at)}</b></span>
+                      </div>
+                    )}
                     <div>
                       <div className="muted" style={{ fontSize: '.82rem', marginBottom: '.3rem' }}>SHA-256 відбиток публічного ключа:</div>
                       <code style={{ fontSize: '.76rem', background: 'var(--surface-1, #111)', padding: '4px 8px', borderRadius: 4, display: 'block', wordBreak: 'break-all', color: 'var(--accent, #60a5fa)' }}>
@@ -944,6 +986,15 @@ export function AdminKeys() {
                       onChange={e => setPassword(e.target.value)}
                       placeholder="Введіть надійний пароль захисту"
                     />
+                  </label>
+
+                  <label className="f" style={{ marginTop: '.75rem', marginBottom: 0 }}>
+                    Термін дії нового ключа
+                    <select value={keyTtl} onChange={e => setKeyTtl(Number(e.target.value))}>
+                      <option value={365}>365 днів (1 рік — рекомендовано)</option>
+                      <option value={180}>180 днів (6 місяців)</option>
+                      <option value={90}>90 днів (1 квартал)</option>
+                    </select>
                   </label>
 
                   {err && <div className="alert danger">{err}</div>}

@@ -4,6 +4,9 @@ akpmonitor.dev {
         max_size 20MB
     }
 
+    # Блокування зовнішнього доступу до панелі Django-admin
+    respond /django-admin* "Доступ заборонено (використовуйте авторизацію за електронним ключем .key)" 403
+
     # Reverse proxy до Django/Gunicorn
     reverse_proxy localhost:8000 {
         header_down -Strict-Transport-Security

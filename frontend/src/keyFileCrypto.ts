@@ -23,6 +23,7 @@ export interface KeyFileContainer {
   role?: string
   fingerprint: string
   created_at: string
+  expires_at?: string
   crypto: KeyFileCryptoInfo
 }
 
@@ -157,7 +158,8 @@ export async function decryptAndSignChallenge(
 export async function generateKeyFile(
   userLogin: string,
   role: string,
-  password: string
+  password: string,
+  expiresInDays: number = 365
 ): Promise<{ keyFile: KeyFileContainer; filename: string }> {
   if (!password || password.length < 4) {
     throw new Error('Пароль захисту ключа має містити щонайменше 4 символи.')
@@ -227,12 +229,15 @@ export async function generateKeyFile(
   )
 
   const cleanLogin = userLogin.trim().toLowerCase()
+  const now = new Date()
+  const expDate = new Date(now.getTime() + expiresInDays * 24 * 60 * 60 * 1000)
   const keyFile: KeyFileContainer = {
     format: 'AKP-KEY-V1',
     user_login: cleanLogin,
     role: role || 'VYK',
     fingerprint,
-    created_at: new Date().toISOString(),
+    created_at: now.toISOString(),
+    expires_at: expDate.toISOString(),
     crypto: {
       kdf: 'PBKDF2',
       hash: 'SHA-256',

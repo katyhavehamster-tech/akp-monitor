@@ -77,17 +77,19 @@ class Command(BaseCommand):
         for r in rows("korystuvachi"):
             u = User.objects.create_user(username=r["id"].lower(), password=DEMO_PASSWORD,
                                          is_staff=r["rol"] == "ADMIN", is_superuser=r["rol"] == "ADMIN")
+            user_role = "AUDIT" if r["rol"] == "ANAL" else r["rol"]
             Token.objects.create(user=u)
             profiles[r["id"]] = Profile.objects.create(
-                user=u, code=r["id"], full_name="", role=r["rol"],
+                user=u, code=r["id"], full_name="", role=user_role,
                 unit=units.get(r["pidrozdil_id"]), position=r["posada"],
             )
-            # Реєструємо первинний електронний ключ доступу
-            kd = get_or_create_test_key_container(r["id"].lower(), r["rol"], DEMO_PASSWORD)
+            # Реєструємо первинний електронний ключ доступу (TTL: 365 днів)
+            kd = get_or_create_test_key_container(r["id"].lower(), user_role, DEMO_PASSWORD)
             UserAccessKey.objects.create(
                 user=u,
                 public_key_pem=kd["crypto"]["public_key"],
                 fingerprint=kd["fingerprint"],
+                expires_at=timezone.now() + timedelta(days=365),
             )
 
         risks = {}

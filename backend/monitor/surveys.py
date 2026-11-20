@@ -410,10 +410,10 @@ def survey_xlsx(res: dict, user_profile=None) -> bytes:
     # Watermark / classification line
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     u_code = getattr(user_profile, "code", "SYS")
-    u_role = getattr(user_profile, "role", "ANAL")
+    u_role = getattr(user_profile, "role", "AUDIT")
     h = hashlib.sha256(f"{u_code}:{u_role}:{now_str}:survey".encode()).hexdigest()[:12]
-    if u_role == "ANAL":
-        wm_stamp = f"ANAL · {u_code} · {u_role} · {now_str} · ІзОД / ДСК · SHA-256: {h}"
+    if u_role in ("AUDIT", "ANAL"):
+        wm_stamp = f"AUDIT · {u_code} · {u_role} · {now_str} · ІзОД / ДСК · SHA-256: {h}"
     else:
         wm_stamp = f"ІзОД / ДСК · {u_code} · {u_role} · {now_str} · SHA-256: {h}"
 

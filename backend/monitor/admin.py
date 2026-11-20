@@ -31,7 +31,7 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 @admin.register(m.UserAccessKey)
 class UserAccessKeyAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "fingerprint", "is_revoked", "created_at", "revoked_at"]
+    list_display = ["id", "user", "fingerprint", "is_revoked", "created_at", "expires_at", "revoked_at"]
     list_filter = ["is_revoked"]
     search_fields = ["user__username", "fingerprint"]
 
