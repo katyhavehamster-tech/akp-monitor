@@ -88,10 +88,20 @@ else:
         }
     }
 
+CACHE_DIR = Path(os.environ.get("DJANGO_CACHE_DIR", BASE_DIR / ".cache"))
+try:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "akp-monitor-cache",
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": str(CACHE_DIR),
+        "TIMEOUT": 300,
+        "OPTIONS": {
+            "MAX_ENTRIES": 10000,
+        },
     }
 }
 
