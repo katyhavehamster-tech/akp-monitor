@@ -99,7 +99,7 @@ export async function decryptAndSignChallenge(
   const aesKey = await cryptoSubtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: b64ToUint8(salt),
+      salt: b64ToUint8(salt) as unknown as BufferSource,
       iterations: iterations || 100000,
       hash: 'SHA-256',
     },
@@ -115,10 +115,10 @@ export async function decryptAndSignChallenge(
     decryptedPkcs8 = await cryptoSubtle.decrypt(
       {
         name: 'AES-GCM',
-        iv: b64ToUint8(iv),
+        iv: b64ToUint8(iv) as unknown as BufferSource,
       },
       aesKey,
-      b64ToUint8(ciphertext)
+      b64ToUint8(ciphertext) as unknown as BufferSource
     )
   } catch {
     throw new Error('Невірний пароль від файлу ключа.')
@@ -143,8 +143,9 @@ export async function decryptAndSignChallenge(
   const sigBuffer = await cryptoSubtle.sign(
     { name: 'ECDSA', hash: { name: 'SHA-256' } },
     privateKey,
-    challengeBytes
+    challengeBytes as unknown as BufferSource
   )
+
 
   return uint8ToB64(new Uint8Array(sigBuffer))
 }
@@ -208,7 +209,7 @@ export async function generateKeyFile(
   const aesKey = await cryptoSubtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt,
+      salt: salt as unknown as BufferSource,
       iterations: 100000,
       hash: 'SHA-256',
     },
@@ -220,9 +221,9 @@ export async function generateKeyFile(
 
   // 7. Шифрування приватного ключа
   const encryptedBuffer = await cryptoSubtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as unknown as BufferSource },
     aesKey,
-    pkcs8Buffer
+    pkcs8Buffer as unknown as BufferSource
   )
 
   const cleanLogin = userLogin.trim().toLowerCase()
