@@ -17,7 +17,7 @@ import {
   RISK_TONE,
   useApi,
 } from '../components/ui'
-import { Filter, Grid3X3, Layers, Target, X } from 'lucide-react'
+import { Grid3X3, X } from 'lucide-react'
 
 // Градація зон за Методологією НАЗК № 830/21
 function getZone(score: number): {
@@ -158,15 +158,15 @@ export default function Risks() {
       </div>
 
       {/* Інтерактивна Теплова карта ризиків 5x5 */}
-      <Card
-        title={
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem' }}>
-            <Grid3X3 size={18} style={{ color: 'var(--accent)' }} />
-            Теплова карта ризиків 5×5 (Методологія НАЗК № 830/21)
-          </span>
-        }
-        style={{ marginTop: '1.25rem' }}
-      >
+      <div style={{ marginTop: '1.25rem' }}>
+        <Card
+          title={
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem' }}>
+              <Grid3X3 size={18} style={{ color: 'var(--accent)' }} />
+              Теплова карта ризиків 5×5 (Методологія НАЗК № 830/21)
+            </span>
+          }
+        >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
           <p className="muted" style={{ margin: 0, fontSize: '.84rem' }}>
             Натисніть на комірку або рівень для фільтрації списку ризиків унизу.
@@ -231,7 +231,7 @@ export default function Risks() {
 
             {/* Рядки ймовірності */}
             {pValues.map(p => (
-              <div key={p} style={{ contents: 'unset', display: 'contents' }}>
+              <div key={p} style={{ display: 'contents' }}>
                 {/* Лейбл рядка (Ймовірність) */}
                 <div style={{ display: 'flex', alignItems: 'center', padding: '.4rem .6rem', background: 'var(--surface-2)', borderRadius: 'var(--radius)', fontWeight: 600, fontSize: '.76rem', color: 'var(--ink)' }}>
                   {PROB_LABELS[p]}
@@ -358,6 +358,7 @@ export default function Risks() {
           )}
         </div>
       </Card>
+      </div>
 
       {/* Список ризиків */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '1.25rem 0 .75rem' }}>
