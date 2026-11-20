@@ -90,16 +90,6 @@ const CABINET: Record<Role, string> = {
   KER: 'Кабінет керівника', ANAL: 'Кабінет аналітика',
 }
 
-function resolveLabel(pathname: string): string {
-  if (pathname.startsWith('/program/measures/') && pathname !== '/program/measures') {
-    return `Захід ${pathname.split('/').pop()}`
-  }
-  const found = GROUPS.flatMap(g => g.items)
-    .filter(i => pathname.startsWith(i[0]))
-    .sort((a, b) => b[0].length - a[0].length)[0]
-  return found ? found[1] : 'Моніторинг'
-}
-
 export default function Layout() {
   const { profile, today, periods, period, setPeriod, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
