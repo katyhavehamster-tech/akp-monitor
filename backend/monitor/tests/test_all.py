@@ -1011,9 +1011,10 @@ class OwaspSecurityTests(Base):
 
     def test_measure_done_validation_requires_indicator_fact(self):
         """Заборона ставити статус «Виконано» без фактичного значення індикатора результативності."""
-        c = self.client_for("u-003")
+        c = self.client_for("u-001")
         # 1. Спроба зберегти статус «vykonano» без indicator_fact
         r = c.post("/api/measures/Z-01/execution", {
+            "period": "2026-Q2",
             "status": "vykonano",
             "fact_date": "2026-06-01",
             "indicator_fact": None,
@@ -1025,6 +1026,7 @@ class OwaspSecurityTests(Base):
 
         # 2. Успішне збереження зі значенням індикатора
         r_ok = c.post("/api/measures/Z-01/execution", {
+            "period": "2026-Q2",
             "status": "vykonano",
             "fact_date": "2026-06-01",
             "indicator_fact": 1.0,
@@ -1034,19 +1036,10 @@ class OwaspSecurityTests(Base):
 
     def test_approval_formal_close_requires_justification(self):
         """Обов'язкове обґрунтування при погодженні заходу попри сигнал «формального закриття» (RF3)."""
-        # Створюємо умови для RF3: статус виконано, але немає підтвердних документів
-        c_vyk = self.client_for("u-003")
-        c_vyk.post("/api/measures/Z-02/execution", {
-            "status": "vykonano",
-            "fact_date": "2026-06-01",
-            "indicator_fact": 5.0,
-            "result_text": "Звіт без документів",
-            "submit": True,
-        }, format="json")
-
         c_koord = self.client_for("u-002")
-        # 1. Погодження без обґрунтування (або менше 20 символів) блокується
-        r_fail = c_koord.post("/api/measures/Z-02/approve", {
+        # 1. Погодження заходу Z-16 (де активний сигнал RF3) без належного обґрунтування блокується
+        r_fail = c_koord.post("/api/measures/Z-16/approve", {
+            "period": "2026-Q2",
             "decision": "approve",
             "formal_close_justification": "Коротко",
         }, format="json")
@@ -1055,18 +1048,20 @@ class OwaspSecurityTests(Base):
 
         # 2. Погодження з обґрунтуванням >= 20 символів проходить успішно
         valid_just = "Захід перевірено за внутрішніми реєстрами наказом № 102/2026 у повному обсязі."
-        r_ok = c_koord.post("/api/measures/Z-02/approve", {
+        r_ok = c_koord.post("/api/measures/Z-16/approve", {
+            "period": "2026-Q2",
             "decision": "approve",
             "formal_close_justification": valid_just,
         }, format="json")
         self.assertEqual(r_ok.status_code, 200)
-        from monitor.models import Execution, Measure, ReportingPeriod
-        ex = Execution.objects.get(measure__code="Z-02", period__code="2026-Q2")
+        from monitor.models import Execution
+        ex = Execution.objects.get(measure__code="Z-16", period__code="2026-Q2")
         self.assertEqual(ex.formal_close_justification, valid_just)
 
     def test_key_revoke_flushes_sessions_and_tokens(self):
         """Миттєве завершення активних сесій та токенів при відкликанні ключа."""
-        from monitor.models import Profile, User
+        from django.contrib.auth.models import User
+        from monitor.models import Profile
         from rest_framework.authtoken.models import Token
         user = User.objects.get(username="u-003")
         token, _ = Token.objects.get_or_create(user=user)
