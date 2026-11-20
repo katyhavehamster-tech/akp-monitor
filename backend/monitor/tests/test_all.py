@@ -993,6 +993,100 @@ class OwaspSecurityTests(Base):
             self.assertEqual(len(key_files), 1)
             self.assertTrue(key_files[0].name.startswith("akp_u-001"))
 
+    def test_two_level_progress_and_rules_version(self):
+        """Перевірка дворівневого моніторингу та фіксації rules_version."""
+        c = self.client_for("u-002")
+        r = c.get("/api/dashboard")
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertEqual(d.get("rules_version"), "v1.2.0")
+        mon = d.get("monitoring", {})
+        self.assertEqual(mon.get("rules_version"), "v1.2.0")
+        self.assertIn("two_level_progress", mon)
+        two = mon["two_level_progress"]
+        self.assertIn("formal_execution_percent", two)
+        self.assertIn("risk_achievement_percent", two)
+        self.assertIn("gap", two)
+        self.assertEqual(two.get("rules_version"), "v1.2.0")
+
+    def test_measure_done_validation_requires_indicator_fact(self):
+        """Заборона ставити статус «Виконано» без фактичного значення індикатора результативності."""
+        c = self.client_for("u-003")
+        # 1. Спроба зберегти статус «vykonano» без indicator_fact
+        r = c.post("/api/measures/Z-01/execution", {
+            "status": "vykonano",
+            "fact_date": "2026-06-01",
+            "indicator_fact": None,
+            "result_text": "Тестовий результат",
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("indicator_fact", r.json())
+        self.assertIn("обов'язково заповніть фактичне значення індикатора", r.json()["indicator_fact"])
+
+        # 2. Успішне збереження зі значенням індикатора
+        r_ok = c.post("/api/measures/Z-01/execution", {
+            "status": "vykonano",
+            "fact_date": "2026-06-01",
+            "indicator_fact": 1.0,
+            "result_text": "Захід повністю виконано за фактом",
+        }, format="json")
+        self.assertEqual(r_ok.status_code, 200)
+
+    def test_approval_formal_close_requires_justification(self):
+        """Обов'язкове обґрунтування при погодженні заходу попри сигнал «формального закриття» (RF3)."""
+        # Створюємо умови для RF3: статус виконано, але немає підтвердних документів
+        c_vyk = self.client_for("u-003")
+        c_vyk.post("/api/measures/Z-02/execution", {
+            "status": "vykonano",
+            "fact_date": "2026-06-01",
+            "indicator_fact": 5.0,
+            "result_text": "Звіт без документів",
+            "submit": True,
+        }, format="json")
+
+        c_koord = self.client_for("u-002")
+        # 1. Погодження без обґрунтування (або менше 20 символів) блокується
+        r_fail = c_koord.post("/api/measures/Z-02/approve", {
+            "decision": "approve",
+            "formal_close_justification": "Коротко",
+        }, format="json")
+        self.assertEqual(r_fail.status_code, 400)
+        self.assertIn("formal_close_justification", r_fail.json())
+
+        # 2. Погодження з обґрунтуванням >= 20 символів проходить успішно
+        valid_just = "Захід перевірено за внутрішніми реєстрами наказом № 102/2026 у повному обсязі."
+        r_ok = c_koord.post("/api/measures/Z-02/approve", {
+            "decision": "approve",
+            "formal_close_justification": valid_just,
+        }, format="json")
+        self.assertEqual(r_ok.status_code, 200)
+        from monitor.models import Execution, Measure, ReportingPeriod
+        ex = Execution.objects.get(measure__code="Z-02", period__code="2026-Q2")
+        self.assertEqual(ex.formal_close_justification, valid_just)
+
+    def test_key_revoke_flushes_sessions_and_tokens(self):
+        """Миттєве завершення активних сесій та токенів при відкликанні ключа."""
+        from monitor.models import Profile, User
+        from rest_framework.authtoken.models import Token
+        user = User.objects.get(username="u-003")
+        token, _ = Token.objects.get_or_create(user=user)
+
+        c_user = APIClient()
+        c_user.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        r_me = c_user.get("/api/auth/me")
+        self.assertEqual(r_me.status_code, 200)
+
+        # Відкликаємо ключ через адміна
+        admin_c = self.client_for("u-001")
+        r_rev = admin_c.post("/api/admin/keys/U-003/revoke")
+        self.assertEqual(r_rev.status_code, 200)
+
+        # Переконуємось, що токен видалено і наступний запит повертає 401
+        self.assertFalse(Token.objects.filter(user=user).exists())
+        r_after = c_user.get("/api/auth/me")
+        self.assertEqual(r_after.status_code, 401)
+
+
 
 
 

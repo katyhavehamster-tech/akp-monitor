@@ -215,6 +215,7 @@ def execution_dict(e: Execution | None):
         return None
     return {"status": e.status, "status_name": e.get_status_display(), "fact_date": e.fact_date,
             "result_text": e.result_text, "indicator_fact": e.indicator_fact,
+            "formal_close_justification": getattr(e, "formal_close_justification", "") or "",
             "entered_by": e.entered_by.code if e.entered_by else None, "entered_at": e.entered_at,
             "approval": e.approval, "approval_name": e.get_approval_display(),
             "approved_by": e.approved_by.code if e.approved_by else None, "approved_at": e.approved_at}
@@ -1118,6 +1119,19 @@ def execution_save(request, code):
             changes["result_text"] = (d["result_text"] or "").strip()
         if "indicator_fact" in d:
             changes["indicator_fact"] = _parse_float(d["indicator_fact"], field="indicator_fact")
+
+        # Заборона ставити статус «Виконано» без фактичного значення індикатора результативності
+        new_status = changes.get("status", ex.status)
+        new_ind_fact = changes["indicator_fact"] if "indicator_fact" in changes else ex.indicator_fact
+        if new_status == "vykonano" and new_ind_fact is None:
+            raise ValidationError({
+                "indicator_fact": "Для встановлення статусу «Виконано» обов'язково заповніть фактичне значення індикатора результативності."
+            })
+        if d.get("submit") and new_status == "vykonano" and new_ind_fact is None:
+            raise ValidationError({
+                "indicator_fact": "Для подання на погодження у статусі «Виконано» обов'язково заповніть фактичне значення індикатора результативності."
+            })
+
         for f, v in changes.items():
             old = getattr(ex, f)
             if old != v:
@@ -1152,9 +1166,32 @@ def execution_approve(request, code):
     ex = get_object_or_404(Execution, measure=m, period=period)
     decision = request.data.get("decision")
     comment = (request.data.get("comment") or "").strip()
+    justification = (request.data.get("formal_close_justification") or request.data.get("justification") or "").strip()
     if decision == "approve":
+        # Перевірка наявності сигналу «формального закриття» (RF3)
+        snaps = R.snapshot(period, Measure.objects.filter(pk=m.pk))
+        flags = R.compute_flags(period, snaps)
+        has_formal_close = any(f["code"] == "RF3" and f["id"] == m.code for f in flags)
+        if has_formal_close:
+            if len(justification) < 20:
+                raise ValidationError({
+                    "formal_close_justification": "Для погодження заходу за наявності сигналу «формального закриття» обов'язково надайте обґрунтування (не менше 20 символів)."
+                })
+            ex.formal_close_justification = justification
+            key = p.user.access_keys.filter(is_revoked=False).order_by("-created_at").first()
+            fp = key.fingerprint if key else ""
+            AuditLog.write(
+                p,
+                "погоджено координатором попри сигнал формального закриття",
+                "vykonannia",
+                m.code,
+                field="formal_close_justification",
+                old="",
+                new=f"[{fp[:16]}] {justification}" if fp else justification,
+            )
+        else:
+            AuditLog.write(p, "погоджено координатором", "vykonannia", m.code)
         ex.approval, ex.approved_by, ex.approved_at = "approved", p, timezone.now()
-        AuditLog.write(p, "погоджено координатором", "vykonannia", m.code)
     elif decision == "return":
         if not comment:
             raise ValidationError({"comment": "Вкажіть зауваження для виконавця."})
@@ -1361,6 +1398,7 @@ def dashboard(request):
         u["nonexecution"] = dict(levels)
         u["flags"] = sum(1 for f in flags if f.get("unit") == u["code"])
     return Response({
+        "rules_version": R.RULES_VERSION,
         "period": period_dict(period, today), "today": today,
         "monitoring": R.monitoring(period, snaps),
         "by_section": R.breakdown(period, snaps, "section"),
@@ -1761,6 +1799,7 @@ def verify_report(request):
             "year": snapshot.year,
             "half": snapshot.half,
             "report_type": snapshot.report_type,
+            "rules_version": getattr(snapshot, "rules_version", R.RULES_VERSION) or R.RULES_VERSION,
             "created_at": snapshot.created_at.isoformat(),
             "created_by": snapshot.created_by_code,
             "organ_name": snapshot.organ_name,
@@ -2191,6 +2230,25 @@ def admin_keys(request):
     return Response(items)
 
 
+def _flush_user_sessions(user):
+    """Анулює всі активні токени та Django-сесії вказаного користувача при перевипуску або відкликанні ключа."""
+    try:
+        Token.objects.filter(user=user).delete()
+    except Exception:
+        pass
+    try:
+        from django.contrib.sessions.models import Session
+        for s in Session.objects.iterator():
+            try:
+                data = s.get_decoded()
+                if str(data.get("_auth_user_id")) == str(user.id):
+                    s.delete()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 @api_view(["POST"])
 def admin_key_register(request):
     """Реєстрація публічного ключа, згенерованого в браузері адміністратора."""
@@ -2219,6 +2277,8 @@ def admin_key_register(request):
             public_key_pem=pub_pem,
             fingerprint=calculated_fp,
         )
+        # Негайне анулювання активних сесій та токенів користувача при перевипуску ключа
+        _flush_user_sessions(target_user)
         AuditLog.write(
             admin_p,
             "випуск ключа доступу (.key)",
@@ -2250,6 +2310,8 @@ def admin_key_revoke(request, code):
     first_fp = active_keys.first().fingerprint
     with transaction.atomic():
         active_keys.update(is_revoked=True, revoked_at=timezone.now())
+        # Негайне анулювання активних сесій та токенів користувача при відкликанні ключа
+        _flush_user_sessions(target_user)
         AuditLog.write(
             admin_p,
             "відкликання ключа доступу (.key)",

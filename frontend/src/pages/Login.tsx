@@ -19,11 +19,22 @@ export default function Login() {
   const [isDragging, setIsDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [revocationNotice, setRevocationNotice] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     ensureCsrf().catch(() => {})
+    try {
+      const p = new URLSearchParams(window.location.search)
+      const r = p.get('reason') || sessionStorage.getItem('auth_redirect_reason')
+      if (r === 'key_revoked') {
+        setRevocationNotice('Ваш активний сеанс завершено: особистий ключ доступу було відкликано або перевипущено. Будь ласка, завантажте новий файл ключа (.key) та здійсніть вхід.')
+        sessionStorage.removeItem('auth_redirect_reason')
+      }
+    } catch {
+      /* ignore */
+    }
   }, [])
 
   const handleFile = async (file: File) => {
@@ -134,6 +145,13 @@ export default function Login() {
               Криптографічний захист Challenge-Response (ECDSA P-256 / AES-GCM)
             </div>
           </div>
+
+          {revocationNotice && (
+            <div className="alert danger" role="alert" style={{ marginBottom: '.85rem', fontSize: '.84rem', lineHeight: 1.45 }}>
+              <div style={{ fontWeight: 700, marginBottom: '.2rem' }}>⚠️ Сеанс завершено</div>
+              {revocationNotice}
+            </div>
+          )}
 
           <div className="login-fields">
             {/* 1. Поле завантаження/перетягування файлу ключа */}

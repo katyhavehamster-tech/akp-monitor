@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  BarChart3, CalendarDays, FileCheck, LogIn, Moon, PieChart as PieChartIcon, Search, ShieldCheck, Sun, X,
+  BarChart3, CalendarDays, CheckCircle2, FileCheck, Layers, LogIn, Moon, PieChart as PieChartIcon, Search, ShieldCheck, Sun, Target, X,
 } from 'lucide-react'
 import {
   Bar as RBar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -325,6 +325,89 @@ export default function PublicPortal() {
               <div className="public-portal-stat-box bad">
                 <div className="public-portal-stat-lbl">Не виконано</div>
                 <div className="public-portal-stat-num">{stats.failed}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Дворівневий прогрес: Формальне виконання vs Реальне зниження ризиків */}
+          {!data?.restricted && data?.monitoring?.two_level_progress && (
+            <div className="card two-level-progress-card" style={{ marginTop: '1.25rem', padding: '1.1rem 1.3rem', background: 'var(--surface)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem', marginBottom: '.9rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                  <Layers size={18} style={{ color: 'var(--accent)' }} />
+                  <div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--ink)' }}>
+                      Дворівневий прогрес: Формальне закриття vs Зниження ризиків
+                    </div>
+                    <div className="muted" style={{ fontSize: '.76rem', marginTop: '.1rem' }}>
+                      Порівняння звітного виконання заходів із фактичним рухом індикаторів корупційних ризиків НАЗК
+                    </div>
+                  </div>
+                </div>
+                <span className="pill info" style={{ fontSize: '.74rem', fontWeight: 600 }}>
+                  Рушій правил: {data.monitoring.two_level_progress.rules_version || 'v1.2.0'}
+                </span>
+              </div>
+
+              <div className="grid g2" style={{ gap: '1rem' }}>
+                <div style={{ background: 'var(--surface-2)', padding: '.85rem 1rem', borderRadius: 'var(--radius)', border: '1px solid var(--line)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.35rem' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontWeight: 600, fontSize: '.88rem' }}>
+                      <CheckCircle2 size={16} style={{ color: 'var(--ok)' }} />
+                      1. Виконання заходів (формальне)
+                    </span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--ok)' }}>
+                      {data.monitoring.two_level_progress.formal_execution_percent}%
+                    </span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden', margin: '.5rem 0' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, data.monitoring.two_level_progress.formal_execution_percent))}%`, background: 'var(--ok)', transition: 'width .3s' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.78rem', color: 'var(--muted)' }}>
+                    <span>Закрито: <b>{data.monitoring.two_level_progress.formal_execution_done}</b> з <b>{data.monitoring.two_level_progress.formal_execution_total}</b> заходів</span>
+                    <span>Звітний стан</span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--surface-2)', padding: '.85rem 1rem', borderRadius: 'var(--radius)', border: '1px solid var(--line)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.35rem' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontWeight: 600, fontSize: '.88rem' }}>
+                      <Target size={16} style={{ color: 'var(--accent)' }} />
+                      2. Зниження корупційних ризиків
+                    </span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent)' }}>
+                      {data.monitoring.two_level_progress.risk_achievement_percent}%
+                    </span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden', margin: '.5rem 0' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, data.monitoring.two_level_progress.risk_achievement_percent))}%`, background: 'var(--accent)', transition: 'width .3s' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.78rem', color: 'var(--muted)' }}>
+                    <span>Зменшуються: <b>{data.monitoring.two_level_progress.risks_reducing_count}</b> з <b>{data.monitoring.two_level_progress.risks_total}</b> ризиків</span>
+                    <span>За індикаторами НАЗК</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{
+                marginTop: '.85rem',
+                padding: '.65rem .85rem',
+                borderRadius: 'var(--radius)',
+                background: data.monitoring.two_level_progress.gap > 15 ? 'rgba(234, 88, 12, 0.08)' : 'var(--surface-2)',
+                border: `1px solid ${data.monitoring.two_level_progress.gap > 15 ? 'rgba(234, 88, 12, 0.3)' : 'var(--line)'}`,
+                fontSize: '.82rem',
+                lineHeight: 1.45
+              }}>
+                <b>Розрив змістовної ефективності (Gap):</b>{' '}
+                <span style={{ fontWeight: 700, color: data.monitoring.two_level_progress.gap > 0 ? '#ea580c' : 'var(--ok)' }}>
+                  {data.monitoring.two_level_progress.gap > 0 ? `+${data.monitoring.two_level_progress.gap}%` : `${data.monitoring.two_level_progress.gap}%`}
+                </span>
+                {' · '}
+                <span className="muted">
+                  {data.monitoring.two_level_progress.gap > 15
+                    ? 'Формальне закриття заходів суттєво випереджає зниження корупційних ризиків за індикаторами результативності.'
+                    : 'Показники виконання заходів та реального зниження ризиків узгоджені.'}
+                </span>
               </div>
             </div>
           )}

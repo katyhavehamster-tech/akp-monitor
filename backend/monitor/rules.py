@@ -19,6 +19,7 @@ from .models import (DeadlineChange, Evidence, Execution, Measure, Program, Repo
                      SystemSettings, Unit)
 
 RULES_PATH = Path(__file__).with_name("rules.yaml")
+RULES_VERSION = "v1.2.0"
 
 PORTAL_DONE = "Виконано"
 PORTAL_PARTIAL = "Частково виконано"
@@ -129,7 +130,8 @@ def _flag(code, obj, obj_id, explanation, unit=None, measure=None):
     return {"code": code, "object": obj, "id": obj_id, "title": r["title"], "signal": r["description"],
             "explanation": explanation, "severity": r["severity"],
             "rule": r["rule"].format(**r.get("params", {})),
-            "unit": unit, "measure_content": measure.content if measure else None}
+            "unit": unit, "measure_content": measure.content if measure else None,
+            "rules_version": RULES_VERSION}
 
 
 def compute_flags(period: ReportingPeriod, snaps: list[Snap] | None = None) -> list[dict]:
@@ -266,6 +268,30 @@ def monitoring(period: ReportingPeriod, snaps: list[Snap]) -> dict:
     def pct(n):
         return round(100 * n / total, 1) if total else 0.0
 
+    formal_pct = pct(by_status["vykonano"])
+    all_risks = list(Risk.objects.prefetch_related("measurements").all())
+    measured_progs = []
+    risks_reducing_count = 0
+    for r in all_risks:
+        p_val = r.progress_on(end)
+        if p_val is not None:
+            measured_progs.append(max(0.0, min(1.0, p_val)))
+            if p_val >= 0.5:
+                risks_reducing_count += 1
+    risk_pct = round(100 * sum(measured_progs) / len(measured_progs), 1) if measured_progs else 0.0
+    gap = round(formal_pct - risk_pct, 1)
+
+    two_level = {
+        "formal_execution_percent": formal_pct,
+        "formal_execution_done": by_status["vykonano"],
+        "formal_execution_total": total,
+        "risk_achievement_percent": risk_pct,
+        "risks_reducing_count": risks_reducing_count,
+        "risks_total": len(all_risks),
+        "gap": gap,
+        "rules_version": RULES_VERSION,
+    }
+
     return {
         "total": total,
         "counts": {
@@ -276,13 +302,15 @@ def monitoring(period: ReportingPeriod, snaps: list[Snap]) -> dict:
             "done_on_time": on_time, "done_late": late, "entered": entered, "approved": approved,
         },
         "percent": {
-            "vykonano": pct(by_status["vykonano"]), "chastkovo": pct(by_status["chastkovo"]),
+            "vykonano": formal_pct, "chastkovo": pct(by_status["chastkovo"]),
             "ne_vykonano": pct(portal[PORTAL_NOT_DONE]), "v_roboti": pct(by_status["v_roboti"]),
             "ne_rozpochato": pct(by_status["ne_rozpochato"]), "postponed": pct(postponed),
             "overdue": pct(overdue), "not_due": pct(portal[PORTAL_NOT_DUE]),
             "on_time_of_dated_done": round(100 * on_time / len(dated_done), 1) if dated_done else None,
             "entered": pct(entered), "approved": pct(approved),
         },
+        "two_level_progress": two_level,
+        "rules_version": RULES_VERSION,
         "portal_states": dict(portal),
     }
 
@@ -316,7 +344,7 @@ def nonexecution_risk(s: Snap, today: date, overdue_units: set) -> dict:
         reasons.append({"points": cfg[key]["points"], "text": cfg[key]["text"].format(**par)})
 
     if s.status == "vykonano":
-        return {"score": 0, "level": "низький", "reasons": []}
+        return {"score": 0, "level": "низький", "reasons": [], "rules_version": RULES_VERSION}
     dl = s.m.current_deadline if s.m.strok_type == "data" else None
     if s.m.strok_type == "data" and s.m.strok_date and s.m.strok_date < today:
         add("overdue")
@@ -332,7 +360,7 @@ def nonexecution_risk(s: Snap, today: date, overdue_units: set) -> dict:
     if not s.execution or not s.execution.entered_at:
         add("no_entry")
     level = "високий" if pts >= par["high_from"] else "середній" if pts >= par["medium_from"] else "низький"
-    return {"score": pts, "level": level, "reasons": reasons}
+    return {"score": pts, "level": level, "reasons": reasons, "rules_version": RULES_VERSION}
 
 
 def risk_state(period: ReportingPeriod, snaps: list[Snap]) -> list[dict]:
@@ -359,12 +387,14 @@ def risk_state(period: ReportingPeriod, snaps: list[Snap]) -> list[dict]:
             verdict = "не змінюється"
         out.append({
             "code": r.code, "name": r.name, "process": r.process, "level": r.level, "score": r.score,
+            "probability": r.probability, "consequences": r.consequences,
             "indicator": r.indicator, "unit": r.indicator_unit, "direction": r.direction,
             "baseline": r.baseline, "current": v, "target": r.target, "progress": prog,
             "measures_total": len(ms), "measures_done": done, "verdict": verdict,
             "owner_unit": r.owner_unit.code if r.owner_unit else None,
             "history": [{"date": m.date.isoformat(), "value": m.value} for m in r.measurements.all()],
             "measures": [s.m.code for s in ms],
+            "rules_version": RULES_VERSION,
         })
     return out
 

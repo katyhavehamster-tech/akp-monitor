@@ -454,7 +454,7 @@ def _clean(t: str) -> str:
     return t.strip()
 
 
-def qr_verification_box(doc, qr_png_bytes: bytes, snapshot_id: str, report_hash: str, signature: str, created_at_str: str, verify_url: str):
+def qr_verification_box(doc, qr_png_bytes: bytes, snapshot_id: str, report_hash: str, signature: str, created_at_str: str, verify_url: str, rules_version: str = "v1.2.0"):
     """Додає блок електронної верифікації з QR-кодом та криптографічним HMAC-підписом у кінець Word-документа."""
     import io
     from docx.shared import Mm, Pt, RGBColor
@@ -516,6 +516,7 @@ def qr_verification_box(doc, qr_png_bytes: bytes, snapshot_id: str, report_hash:
 
     lines = [
         ("ID зліпка: ", str(snapshot_id)),
+        ("Версія правил: ", str(rules_version)),
         ("SHA-256 хеш даних: ", report_hash),
         ("Підпис HMAC-SHA256: ", signature),
         ("Дата та час фіксації: ", created_at_str),

@@ -81,6 +81,7 @@ def get_or_create_portal_snapshot(year: int, half: int, user_profile: Profile | 
         year=year,
         half=half,
         report_type="portal",
+        rules_version=R.RULES_VERSION,
         created_by=user_profile,
         created_by_code=code_val,
         organ_name=organ_name,

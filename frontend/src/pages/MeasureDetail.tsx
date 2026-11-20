@@ -286,6 +286,11 @@ export default function MeasureDetail() {
                           факт. дата: {fmtDate(e.fact_date)}
                         </div>
                       )}
+                      {e.formal_close_justification && (
+                        <div className="alert warning" style={{ fontSize: '.76rem', marginTop: '.35rem', padding: '.3rem .5rem', lineHeight: 1.35 }}>
+                          <b>Обґрунтування RF3:</b> {e.formal_close_justification}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <small>
@@ -666,6 +671,16 @@ function ExecutionForm({ m, period, onSaved }: { m: Any; period: string; onSaved
   const save = async (submit: boolean) => {
     setErr('')
     setRes(null)
+    const isDone = f.status === 'vykonano'
+    const indFactEmpty = f.indicator_fact === '' || f.indicator_fact === null || f.indicator_fact === undefined
+    if (isDone && indFactEmpty) {
+      setErr("Для встановлення статусу «Виконано» обов'язково заповніть фактичне значення індикатора результативності.")
+      return
+    }
+    if (submit && isDone && indFactEmpty) {
+      setErr("Для подання на погодження у статусі «Виконано» обов'язково заповніть фактичне значення індикатора результативності.")
+      return
+    }
     try {
       const r = await api(`measures/${m.code}/execution`, { body: { ...f, period, submit } })
       setRes(r)
@@ -708,6 +723,12 @@ function ExecutionForm({ m, period, onSaved }: { m: Any; period: string; onSaved
           </dd>
           <dt>Опис результату / пояснення</dt>
           <dd>{e.result_text || '—'}</dd>
+          {e.formal_close_justification && (
+            <>
+              <dt>Обґрунтування погодження (RF3)</dt>
+              <dd style={{ color: 'var(--amber)', fontWeight: 600 }}>{e.formal_close_justification}</dd>
+            </>
+          )}
         </dl>
       ) : (
         <>
@@ -766,11 +787,28 @@ function ExecutionForm({ m, period, onSaved }: { m: Any; period: string; onSaved
 
 function ApprovalPanel({ m, period, onDone }: { m: Any; period: string; onDone: () => void }) {
   const [comment, setComment] = useState('')
+  const [justification, setJustification] = useState(m.execution?.formal_close_justification || '')
   const [err, setErr] = useState('')
+
+  const hasFormalClose = m.flags?.some((fl: Any) => fl.code === 'RF3')
+
   const decide = async (decision: string) => {
     setErr('')
+    if (decision === 'approve' && hasFormalClose) {
+      if (justification.trim().length < 20) {
+        setErr("Для погодження заходу за наявності сигналу «формального закриття» обов'язково надайте обґрунтування (не менше 20 символів).")
+        return
+      }
+    }
     try {
-      await api(`measures/${m.code}/approve`, { body: { period, decision, comment } })
+      await api(`measures/${m.code}/approve`, {
+        body: {
+          period,
+          decision,
+          comment,
+          formal_close_justification: justification.trim(),
+        },
+      })
       setComment('')
       onDone()
     } catch (e) {
@@ -783,6 +821,39 @@ function ApprovalPanel({ m, period, onDone }: { m: Any; period: string; onDone: 
         Поточний статус виконання: <StatusPill s={m.status} /> · Погодження:{' '}
         <Pill tone={APPROVAL_TONE[m.execution.approval]}>{m.execution.approval_name}</Pill>
       </p>
+
+      {hasFormalClose && (
+        <div className="alert warning" style={{ marginBottom: '.85rem' }}>
+          <div style={{ fontWeight: 700, marginBottom: '.25rem' }}>
+            ⚠️ Зафіксовано сигнал «формального закриття» (RF3)
+          </div>
+          <div style={{ fontSize: '.84rem', lineHeight: 1.45 }}>
+            Цей захід позначено як формально закритий (відсутні обов’язкові підтвердні документи або показники індикатора не свідчать про фактичне досягнення результату).
+            Для погодження заходу обов’язково наведіть детальне аргументоване обґрунтування (не менше 20 символів).
+          </div>
+        </div>
+      )}
+
+      {hasFormalClose && (
+        <label className="f" style={{ marginBottom: '.85rem' }}>
+          <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>
+              Обґрунтування погодження попри сигнал формального закриття <b style={{ color: 'var(--bad)' }}>*</b>
+            </span>
+            <small style={{ color: justification.trim().length < 20 ? 'var(--warn)' : 'var(--ok)', fontWeight: 600 }}>
+              {justification.trim().length} / 20 символів
+            </small>
+          </span>
+          <textarea
+            rows={3}
+            value={justification}
+            onChange={e => setJustification(e.target.value)}
+            placeholder="Вкажіть аргументовані підстави прийняття звіту виконавця попри сигнал формального закриття (не менше 20 символів)…"
+            style={justification.trim().length < 20 ? { borderColor: 'var(--warn)' } : {}}
+          />
+        </label>
+      )}
+
       <label className="f">
         Зауваження або мотив рішення
         <input
@@ -793,7 +864,13 @@ function ApprovalPanel({ m, period, onDone }: { m: Any; period: string; onDone: 
       </label>
       {err && <div className="alert danger">{err}</div>}
       <div className="row" style={{ gap: '.5rem', flexWrap: 'wrap' }}>
-        <button type="button" className="btn" onClick={() => decide('approve')}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => decide('approve')}
+          disabled={hasFormalClose && justification.trim().length < 20}
+          title={hasFormalClose && justification.trim().length < 20 ? 'Введіть обґрунтування (мін. 20 символів)' : 'Погодити виконання заходу'}
+        >
           Погодити
         </button>
         <button type="button" className="btn secondary" onClick={() => decide('return')}>

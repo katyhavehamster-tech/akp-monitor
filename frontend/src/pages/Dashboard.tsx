@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bar as RBar, BarChart, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fmtDate, num, type Any } from '../api'
 import { useAuth } from '../auth'
-import { ArrowUpRight, Bell } from 'lucide-react'
+import { ArrowUpRight, Bell, CheckCircle2, Layers, Target } from 'lucide-react'
 import { Bar, C, Card, CHART_ITEM_STYLE, CHART_LABEL_STYLE, CHART_TOOLTIP_STYLE, Empty, ErrorBox, Flags, Loading, PageHead, Pill, progressColor, RISK_TONE, STATUS, StatusLegend, StatusPill, StatusStack, Stat, useApi, useIsMobile } from '../components/ui'
 
 export default function Dashboard() {
@@ -21,6 +21,17 @@ export default function Dashboard() {
   const sections = data.by_section.map((s: Any) => ({
     name: `Розділ ${s.code.slice(1)}`, ...Object.fromEntries(Object.keys(STATUS).map(k => [STATUS[k].label, s.counts[k] || 0])),
   }))
+  const twoLevel = m.two_level_progress || {
+    formal_execution_percent: p.vykonano || 0,
+    formal_execution_done: c.vykonano || 0,
+    formal_execution_total: m.total || 0,
+    risk_achievement_percent: 0,
+    risks_reducing_count: 0,
+    risks_total: 0,
+    gap: 0,
+    rules_version: data.rules_version || 'v1.2.0',
+  }
+  const rulesVer = data.rules_version || m.rules_version || twoLevel.rules_version || 'v1.2.0'
 
   return <>
     <PageHead title="Моніторинг виконання програми"
@@ -49,6 +60,102 @@ export default function Dashboard() {
         </div>
       )}
     </Card>}
+
+    {/* Дворівневий прогрес: Формальне виконання vs Реальне зниження ризиків */}
+    <div className="card two-level-progress-card" style={{ marginBottom: '1.25rem', padding: '1.2rem 1.4rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+          <Layers size={20} style={{ color: 'var(--accent)' }} />
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700 }}>
+              Дворівневий прогрес: Формальне закриття vs Зниження ризиків
+            </h2>
+            <div className="muted" style={{ fontSize: '.8rem', marginTop: '.15rem' }}>
+              Порівняльний аналіз звітних статусів та фактичного впливу на корупційні фактори за Методологією НАЗК № 830/21
+            </div>
+          </div>
+        </div>
+        <div className="pill info" style={{ fontSize: '.78rem', fontWeight: 600 }}>
+          Рушій правил: {rulesVer}
+        </div>
+      </div>
+
+      <div className="grid g2" style={{ gap: '1.25rem' }}>
+        {/* Рівень 1: Формальне виконання */}
+        <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.4rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontWeight: 600, fontSize: '.92rem' }}>
+              <CheckCircle2 size={17} style={{ color: 'var(--ok)' }} />
+              1. Виконання заходів (формальне)
+            </span>
+            <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--ok)' }}>
+              {twoLevel.formal_execution_percent}%
+            </span>
+          </div>
+          <div style={{ height: 10, borderRadius: 5, background: 'var(--line)', overflow: 'hidden', margin: '.6rem 0' }}>
+            <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, twoLevel.formal_execution_percent))}%`, background: 'var(--ok)', transition: 'width .3s' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.8rem', color: 'var(--muted)' }}>
+            <span>Закрито: <b>{twoLevel.formal_execution_done}</b> з <b>{twoLevel.formal_execution_total}</b> заходів</span>
+            <span>Звітний статус програми</span>
+          </div>
+        </div>
+
+        {/* Рівень 2: Зниження корупційних ризиків */}
+        <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.4rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontWeight: 600, fontSize: '.92rem' }}>
+              <Target size={17} style={{ color: 'var(--accent)' }} />
+              2. Зниження корупційних ризиків
+            </span>
+            <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent)' }}>
+              {twoLevel.risk_achievement_percent}%
+            </span>
+          </div>
+          <div style={{ height: 10, borderRadius: 5, background: 'var(--line)', overflow: 'hidden', margin: '.6rem 0' }}>
+            <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, twoLevel.risk_achievement_percent))}%`, background: 'var(--accent)', transition: 'width .3s' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.8rem', color: 'var(--muted)' }}>
+            <span>Зменшуються: <b>{twoLevel.risks_reducing_count}</b> з <b>{twoLevel.risks_total}</b> ризиків</span>
+            <span>За індикаторами результативності</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Gap аналіз */}
+      <div style={{
+        marginTop: '1rem',
+        padding: '.75rem 1rem',
+        borderRadius: 'var(--radius)',
+        background: twoLevel.gap > 15 ? 'rgba(234, 88, 12, 0.08)' : 'var(--surface-2)',
+        border: `1px solid ${twoLevel.gap > 15 ? 'rgba(234, 88, 12, 0.3)' : 'var(--line)'}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '.6rem'
+      }}>
+        <div style={{ fontSize: '.84rem', lineHeight: 1.45, flex: 1, minWidth: 260 }}>
+          <b>Розрив змістовної ефективності (Gap):</b>{' '}
+          <span style={{ fontWeight: 700, color: twoLevel.gap > 0 ? '#ea580c' : 'var(--ok)' }}>
+            {twoLevel.gap > 0 ? `+${twoLevel.gap}%` : `${twoLevel.gap}%`}
+          </span>
+          {' · '}
+          <span className="muted">
+            {twoLevel.gap > 15
+              ? 'Формальне закриття заходів суттєво випереджає зниження ризиків. Зверніть увагу на якість та змістовність підтвердних документів.'
+              : 'Показники формального закриття та зниження ризиків збалансовані.'}
+          </span>
+        </div>
+        <button
+          className="btn secondary small"
+          style={{ fontSize: '.8rem' }}
+          onClick={() => nav('/program/risks')}
+        >
+          Теплова карта ризиків 5×5 <ArrowUpRight size={13} style={{ marginLeft: '.25rem' }} />
+        </button>
+      </div>
+    </div>
 
     <div className="stats">
       <Stat v={`${p.vykonano}%`} l="Виконано" s={`${c.vykonano} з ${m.total} заходів`} tone="ok" onClick={() => go('status=vykonano')} />

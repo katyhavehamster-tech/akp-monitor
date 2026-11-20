@@ -79,7 +79,7 @@ def note_docx(period: ReportingPeriod, user_profile=None) -> bytes:
                " не змінюється або щодо них не передбачено заходів, що потребує першочергового реагування.")
 
     D.para(doc, "3. Проблемні питання", bold=True, keep_next=True)
-    D.para(doc, f"За результатами автоматичної перевірки даних за явними правилами виявлено {sum(fc.values())} сигналів про відхилення:")
+    D.para(doc, f"За результатами автоматичної перевірки даних за явними правилами (рушій правил {R.RULES_VERSION}) виявлено {sum(fc.values())} сигналів про відхилення:")
     for code, n in sorted(fc.items()):
         D.bullet(doc, f"{R.rules()['flags'][code]['title'].lower()} ({code}) — {n};")
 
@@ -135,6 +135,7 @@ def portal_docx(year: int, half: int, user_profile=None, base_url: str = "") -> 
         signature=snapshot.signature,
         created_at_str=created_at_str,
         verify_url=verify_url,
+        rules_version=getattr(snapshot, "rules_version", R.RULES_VERSION) or R.RULES_VERSION,
     )
 
     return D.to_bytes(doc)

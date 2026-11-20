@@ -99,7 +99,17 @@ export async function api<T = Any>(path: string, opts: { method?: string; body?:
   const ct = r.headers.get('content-type') || ''
   const data = ct.includes('json') ? await r.json() : await r.text()
   if (!r.ok) {
-    if (r.status === 401) setToken(null)
+    if (r.status === 401) {
+      setToken(null)
+      try {
+        sessionStorage.setItem('auth_redirect_reason', 'key_revoked')
+      } catch {
+        /* ignore */
+      }
+      if (typeof window !== 'undefined' && !['/login', '/public', '/verify'].includes(window.location.pathname)) {
+        window.location.href = '/login?reason=key_revoked'
+      }
+    }
     throw new ApiError(r.status, data)
   }
   return data as T

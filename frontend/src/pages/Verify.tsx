@@ -323,6 +323,10 @@ export default function Verify() {
                         <b>{res.snapshot.created_by || 'Уповноважена особа'}</b>
                       </div>
                       <div>
+                        <div className="muted">Версія правил розрахунку:</div>
+                        <b style={{ color: 'var(--accent)' }}>{res.snapshot.rules_version || 'v1.2.0'}</b>
+                      </div>
+                      <div>
                         <div className="muted">Заходів у програмі:</div>
                         <b>{res.snapshot.total_measures || rows.length} заходів</b>
                       </div>

@@ -8,7 +8,7 @@
 | VYK   | виконавець (відповідальна особа підрозділу) | лише заходи свого підрозділу; внесення — тільки у відкрите вікно |
 | ANAL  | аналітик                             | лише перегляд аналітики |
 """
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from .models import Measure, Role
@@ -28,6 +28,8 @@ def profile(request):
     p = getattr(request.user, "profile", None)
     if p is None:
         raise PermissionDenied("Обліковий запис не має профілю в системі.")
+    if hasattr(request.user, "access_keys") and not request.user.access_keys.filter(is_revoked=False).exists():
+        raise AuthenticationFailed("Особистий ключ доступу відкликано або заблоковано.")
     return p
 
 
@@ -51,4 +53,8 @@ def can_see_measure(p, m: Measure):
 
 class HasProfile(BasePermission):
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and hasattr(request.user, "profile"))
+        if not (request.user and request.user.is_authenticated and hasattr(request.user, "profile")):
+            return False
+        if hasattr(request.user, "access_keys") and not request.user.access_keys.filter(is_revoked=False).exists():
+            return False
+        return True
