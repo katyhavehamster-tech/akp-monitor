@@ -494,6 +494,24 @@ export function AdminKeys() {
     }
   }
 
+  const terminateUserSessions = async (userCode: string) => {
+    if (!window.confirm(`Ви впевнені, що бажаєте примусово завершити всі активні сесії користувача ${userCode}?`)) {
+      return
+    }
+    setBusy(true)
+    setErr('')
+    setOk('')
+    try {
+      const res = await api<{ ok: boolean; terminated_count: number }>(`admin/sessions/terminate-user/${encodeURIComponent(userCode)}`, { method: 'POST' })
+      setOk(`Примусово завершено всі сесії користувача ${userCode} (${res.terminated_count} сеансів).`)
+      await loadSessions()
+    } catch (e: any) {
+      setErr((e as Error).message || 'Помилка завершення сесій користувача.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const terminateAllOtherSessions = async () => {
     if (!window.confirm('Ви впевнені, що бажаєте примусово завершити ВСІ активні сесії інших користувачів?')) {
       return
@@ -783,16 +801,27 @@ export function AdminKeys() {
                         {s.is_current ? (
                           <span className="pill info" style={{ fontWeight: 600 }}>Поточна сесія (ви)</span>
                         ) : (
-                          <button
-                            type="button"
-                            className="btn small secondary danger"
-                            disabled={busy}
-                            onClick={() => terminateSession(s.id, s.user_code)}
-                            title={`Примусово завершити сесію користувача ${s.user_code}`}
-                          >
-                            <LogOut size={13} style={{ marginRight: '.3rem' }} />
-                            Завершити сесію
-                          </button>
+                          <div className="row" style={{ gap: '.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn small secondary danger"
+                              disabled={busy}
+                              onClick={() => terminateSession(s.id, s.user_code)}
+                              title={`Примусово завершити сесію користувача ${s.user_code}`}
+                            >
+                              <LogOut size={13} style={{ marginRight: '.3rem' }} />
+                              Завершити сесію
+                            </button>
+                            <button
+                              type="button"
+                              className="btn mini ghost danger"
+                              disabled={busy}
+                              onClick={() => terminateUserSessions(s.user_code)}
+                              title={`Примусово завершити всі активні сесії користувача ${s.user_code}`}
+                            >
+                              Всі сесії користувача
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

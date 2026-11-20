@@ -23,7 +23,7 @@ IV Хакатон з питань виховання доброчесності 
 
 ### 1. Завантаження тестових ключів (.key)
 Для зручності членів журі всі готові тестові файли ключів для 19 користувачів зібрано в архіві:
-**[ПОСИЛАННЯ_НА_GOOGLE_DRIVE_З_КЛЮЧАМИ]**
+**[Google Drive з тестовими ключами (.key) для журі](https://drive.google.com/drive/folders/1ALUfDx5LLqq7SiAKn8EBfIFlxYCtSMht?usp=drive_link)**
 
 Пароль захисту для всіх згенерованих ключів: **`demo`**  
 Повний реєстр облікових записів, ролей та підрозділів: [`docs/ACCOUNTS.txt`](docs/ACCOUNTS.txt).
@@ -152,5 +152,5 @@ React 19 (Vite, TS, Web Crypto API) ──REST/JSON──► Django 5 + DRF ─�
   - Backend: Python 3, Django 5, Django REST Framework, `drf-spectacular` (OpenAPI), `cryptography`, `PyYAML`, `openpyxl`, `python-docx`, `whitenoise`, `gunicorn`, `psycopg`.
   - Frontend: React 19, TypeScript, React Router 7, Recharts, `lucide-react`, Vite, Web Crypto API.
 - **Графіка:** офіційний герб Харківського національного університету внутрішніх справ із Wikimedia Commons.
-- **Допоміжні інструменти під час розробки:** Claude (Anthropic) та Gemini у середовищі Google Antigravity (використовувалися виключно як довідковий консультативний ресурс та для перевірки безпекових гіпотез; робочий контур системи є на 100% автономним і не містить ШІ-моделей) — детально у [`docs/ai.md`](docs/ai.md).
+- **Допоміжні інструменти під час розробки:** Claude (Anthropic) та Gemini у середовищі Google Antigravity (використовувалися виключно як допоміжний довідковий ресурс для підказок і вичитки документації; вся архітектура, бізнес-логіка, детерміновані правила та код написані безпосередньо командою розробників, а робочий контур системи є на 100% автономним і не містить ШІ-моделей) — детально у [`docs/ai.md`](docs/ai.md).
 - **Ліцензія проєкту:** [MIT License](LICENSE).

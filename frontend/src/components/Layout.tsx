@@ -108,7 +108,6 @@ export default function Layout() {
   const [open, setOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [trail, setTrail] = useState<{ path: string; label: string }[]>([])
 
   if (!profile) return null
   const role = profile.role
@@ -126,49 +125,14 @@ export default function Layout() {
   const sectionDefaultPath = activeGroup?.items[0]?.[0] || (role === 'VYK' ? '/my' : role === 'ADMIN' ? '/admin/users' : '/program/dashboard')
   const isDetailMeasure = loc.pathname.startsWith('/program/measures/') && loc.pathname !== '/program/measures'
   const detailCode = isDetailMeasure ? loc.pathname.split('/').pop() : null
-  const currentLabel = isDetailMeasure ? (detailCode || '') : (current?.[1] || 'АКП-Монітор')
+  const currentLabel = isDetailMeasure ? `Захід ${detailCode}` : (current?.[1] || 'АКП-Монітор')
   const initials = (profile.unit?.code || profile.role).slice(0, 3)
   const showSidebarLabels = !collapsed || open
 
   useEffect(() => {
     setOpen(false)
     setUserMenuOpen(false)
-    const curPath = loc.pathname
-    const curLbl = resolveLabel(curPath)
-
-    setTrail(prev => {
-      if (isDetailMeasure) {
-        if (prev.length === 2 && prev[0].path === '/program/measures' && prev[1].path === curPath) {
-          return prev
-        }
-        return [
-          { path: '/program/measures', label: 'Реєстр заходів' },
-          { path: curPath, label: `Захід ${detailCode}` },
-        ]
-      }
-
-      if (curPath === sectionDefaultPath) {
-        if (prev.length === 1 && prev[0].path === curPath && prev[0].label === curLbl) {
-          return prev
-        }
-        return [{ path: curPath, label: curLbl }]
-      }
-
-      const isTopLevelItem = activeGroup?.items.some(i => i[0] === curPath)
-      if (isTopLevelItem) {
-        const last = prev[prev.length - 1]
-        if (last && last.path === curPath) return prev
-        const prevPoint = last && last.path !== curPath ? [last] : []
-        return [...prevPoint, { path: curPath, label: curLbl }].slice(-2)
-      }
-
-      const idx = prev.findIndex(item => item.path === curPath || item.label === curLbl)
-      if (idx !== -1) {
-        return prev.slice(0, idx + 1)
-      }
-      return [...prev.slice(-2), { path: curPath, label: curLbl }]
-    })
-  }, [loc.pathname, sectionDefaultPath, isDetailMeasure, detailCode, activeGroup])
+  }, [loc.pathname])
 
   useEffect(() => {
     if (!open && !userMenuOpen) return
@@ -186,23 +150,16 @@ export default function Layout() {
     }
   }, [open, userMenuOpen])
 
-  const prevSteps = trail.slice(0, -1).filter(s => s.label !== currentLabel)
-  const canGoBack = prevSteps.length > 0 || loc.pathname !== sectionDefaultPath
+  const canGoBack = isDetailMeasure || loc.pathname !== sectionDefaultPath
 
   const handleStepBack = () => {
-    if (prevSteps.length > 0) {
-      const target = prevSteps[prevSteps.length - 1]
-      setTrail(prev => prev.slice(0, -1))
-      nav(target.path)
-    } else if (loc.pathname !== sectionDefaultPath) {
-      setTrail([{ path: sectionDefaultPath, label: resolveLabel(sectionDefaultPath) }])
+    if (isDetailMeasure) {
+      nav('/program/measures')
+    } else if (window.history.length > 1) {
+      nav(-1)
+    } else {
       nav(sectionDefaultPath)
     }
-  }
-
-  const handleJumpToStep = (targetPath: string, index: number) => {
-    setTrail(prev => prev.slice(0, index + 1))
-    nav(targetPath)
   }
 
   const handleLogout = async () => {
@@ -259,12 +216,12 @@ export default function Layout() {
           )}
           {section && (
             <>
-              {canGoBack ? (
+              {loc.pathname !== sectionDefaultPath ? (
                 <button
                   type="button"
-                  onClick={() => { setTrail([{ path: sectionDefaultPath, label: resolveLabel(sectionDefaultPath) }]); nav(sectionDefaultPath) }}
+                  onClick={() => nav(sectionDefaultPath)}
                   className="crumb-link hide-sm"
-                  title={`Повернутися у початок розділу «${section}»`}
+                  title={`Перейти у розділ «${section}»`}
                 >
                   {section}
                 </button>
@@ -274,19 +231,19 @@ export default function Layout() {
               <ChevronRight size={15} className="hide-sm" style={{ flexShrink: 0 }} />
             </>
           )}
-          {prevSteps.map((step, idx) => (
-            <span key={step.path} className="hide-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem', flexShrink: 0 }}>
+          {isDetailMeasure && (
+            <>
               <button
                 type="button"
-                onClick={() => handleJumpToStep(step.path, idx)}
-                className="crumb-link"
-                title={`Повернутися до «${step.label}»`}
+                onClick={() => nav('/program/measures')}
+                className="crumb-link hide-sm"
+                title="Повернутися до реєстру заходів"
               >
-                {step.label}
+                Реєстр заходів
               </button>
               <ChevronRight size={15} className="hide-sm" style={{ flexShrink: 0 }} />
-            </span>
-          ))}
+            </>
+          )}
           <b className="crumb-current-title">{currentLabel}</b>
         </nav>
         <div className="tools">
