@@ -9,7 +9,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from monitor.models import (AuditLog, Evidence, Measure, Profile, Program,
+from monitor.models import (AuditLog, Evidence, Execution, Measure, Profile, Program,
                             ReportingPeriod, ReportSnapshot, Role, Survey, SystemSettings, Unit)
 from monitor.selfcheck import run_selfcheck
 from monitor.surveys import (EMPTY_ANSWER_LABEL, DONT_KNOW_LABEL, NO_RISKS_LABEL,
