@@ -670,6 +670,27 @@ def logout(request):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
+@ensure_csrf_cookie
+def demo_users(request):
+    """Список демо-облікових записів для сторінки входу (лише синтетичні ролі, без імен)."""
+    if not getattr(settings, "AKP_DEMO_MODE", True):
+        return Response([])
+    return Response([
+        {
+            "code": p.code,
+            "username": p.user.username,
+            "role": p.role,
+            "role_name": p.get_role_display(),
+            "unit": unit_dict(p.unit),
+            "position": p.position,
+        }
+        for p in Profile.objects.select_related("unit", "user").order_by("code")
+        if p.user.is_active
+    ])
+
+
+@api_view(["GET"])
 @ensure_csrf_cookie
 def me(request):
     p = profile(request)
