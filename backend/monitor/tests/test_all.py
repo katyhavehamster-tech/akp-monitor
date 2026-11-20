@@ -1,5 +1,6 @@
 """Тести: python manage.py test monitor"""
-from datetime import date
+from datetime import date, timedelta
+from django.contrib.auth.models import User
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -1095,7 +1096,8 @@ class OwaspSecurityTests(Base):
         self.assertIn("default-src 'self'", csp_me)
 
         # 2. Перевірка заголовка CSP для документації API (/api/docs/)
-        r_docs = c.get("/api/docs/")
+        c_admin = self.client_for("u-001")
+        r_docs = c_admin.get("/api/docs/")
         self.assertEqual(r_docs.status_code, 200)
         csp_docs = r_docs.headers.get("Content-Security-Policy", "")
         self.assertTrue(bool(csp_docs))
@@ -1194,7 +1196,7 @@ class OwaspSecurityTests(Base):
         self.assertEqual(r_role.status_code, 400)
 
         # 3. Спроба відкликати останній ключ адміна повертає 400
-        r_rev = admin_c.post("/api/admin/keys/revoke/U-001")
+        r_rev = admin_c.post("/api/admin/keys/U-001/revoke")
         self.assertEqual(r_rev.status_code, 400)
 
     def test_system_endpoints_admin_only(self):
