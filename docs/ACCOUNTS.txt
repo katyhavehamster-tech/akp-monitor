@@ -6,7 +6,7 @@
 Сторінка входу за ключем:     https://akpmonitor.dev/login
 Публічний портал моніторингу: https://akpmonitor.dev/public
 Верифікація звітів (QR-код):  https://akpmonitor.dev/verify
-Документація API (Swagger):   https://akpmonitor.dev/api/docs/
+Документація API (Swagger):   https://akpmonitor.dev/api/docs/ (доступно у локальному розгортанні)
 
 Вхід до кабінету здійснюється ВИКЛЮЧНО за персональним криптографічним 
 файлом ключа (.key) у форматі AKP-KEY-V1 та паролем захисту ключа.
@@ -57,7 +57,7 @@ https://drive.google.com/drive/folders/1ALUfDx5LLqq7SiAKn8EBfIFlxYCtSMht?usp=dri
   Логін:       u-005
   Файл ключа:  akp_u-005.key
   Пароль:      demo
-  Роль:        AUDIT / P09 (перегляд аналітики, аудит-трейл із водяними знаками ДСК)
+  Роль:        AUDIT / P09 (перегляд журналу дій, аудит-трейл із водяними знаками ДСК)
 
 
 --------------------------------------------------------------------------------
